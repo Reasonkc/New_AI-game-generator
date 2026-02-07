@@ -3,6 +3,10 @@
 An intelligent game creation platform that uses AI to transform natural language descriptions into fully playable HTML5 games. The system leverages Google's Gemini API for prompt enhancement and Anthropic's Claude API for game code generation using PhaserJS.
 
 ---
+## 📋 Project Management
+
+Track progress on technical debt and feature development:
+- [**Project Board**](https://github.com/Reasonkc/New_AI-game-generator/projects/1) - Live backlog and status
 
 ## 🚀 Features
 
