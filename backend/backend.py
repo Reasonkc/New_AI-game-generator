@@ -3,6 +3,8 @@ import json
 import flask
 from flask import request, jsonify, send_file
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import anthropic
 import os
 import uuid
@@ -12,12 +14,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
 app = flask.Flask(__name__)
 CORS(app)
 
-
+# Initialize rate limiter to prevent API abuse and control costs
+# Limits: enhance_prompt (10/hr), generate_game (5/hr), update_game (5/hr)
+# Tracks by IP address; resets on server restart (in-memory storage)
+limiter =Limiter(
+    app=app,
+    key_func = get_remote_address,
+    default_limits=["150 per day", "35 per hour"],
+    storage_uri="memory://"
+)
 
 if not GEMINI_API_KEY or not CLAUDE_API_KEY:
     raise ValueError("API keys must be set as environment variables")
@@ -66,6 +77,7 @@ def extract_html_from_response(text):
     return cleaned_text
 
 @app.route('/enhance_prompt', methods=['POST'])
+@limiter.limit("10 per hour")
 def enhance_prompt():
     """Use Gemini to refine and enhance the user's game prompt"""
     try:
@@ -119,6 +131,7 @@ Generate a refined game concept with all the necessary details."""
         return jsonify({"error": "Failed to enhance prompt"}), 500
 
 @app.route('/generate_game', methods=['POST'])
+@limiter.limit("5 per hour")
 def generate_game():
     """Use Claude to generate PhaserJS game code based on enhanced prompt"""
     try:
@@ -276,6 +289,7 @@ Return ONLY the complete HTML code with no explanations or markdown formatting. 
         return jsonify({"error": "Failed to generate game"}), 500
 
 @app.route('/update_game', methods=['POST'])
+@limiter.limit("5 per hour")
 def update_game():
     """Update an existing game based on feedback"""
     try:
