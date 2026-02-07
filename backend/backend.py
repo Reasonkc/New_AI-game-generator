@@ -408,7 +408,7 @@ def list_games():
 
 @app.route('/play_game/<game_id>', methods=['GET'])
 def play_game(game_id):
-    """Serve the game HTML directly for playing"""
+    """Serve the game HTML directly for playing with CSP protection"""
     try:
         game_id = sanitize_game_id(game_id)
         game_path = os.path.join(GAMES_DIR, game_id, "index.html")
@@ -416,18 +416,24 @@ def play_game(game_id):
         if not os.path.exists(game_path):
             return "Game not found", 404
         
-        return send_file(game_path)
+        # Create response with the file
+        response = flask.make_response(send_file(game_path))
+        
+        # Add Content Security Policy header to restrict what the game can load
+        # Allows: scripts from self and CDN, inline scripts/styles (needed for games)
+        # Blocks: scripts from unknown domains, tracking pixels, external resources
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'"
+        )
+        
+        return response
         
     except ValueError:
         return "Invalid game ID", 400
     except Exception as e:
         app.logger.error(f"Error in play_game: {str(e)}")
-        return f"Error loading game", 500
-
-@app.route('/health', methods=['GET'])
-def health():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy"}), 200
-
-if __name__ == "__main__":
-    app.run(debug=True, host='127.0.0.1', port=5000)
+        return "Error loading game", 500

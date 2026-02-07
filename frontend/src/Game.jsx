@@ -294,7 +294,7 @@ export default function GamePage() {
                       srcDoc={gameHtml}
                       title={game?.title}
                       className="w-full h-[600px] border-0 bg-white"
-                      sandbox="allow-scripts allow-same-origin allow-modals"
+                      sandbox="allow-scripts allow-modals"
                       allow="autoplay; fullscreen"
                     />
                   )}
