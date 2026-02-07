@@ -12,6 +12,7 @@ from datetime import datetime
 import re
 from dotenv import load_dotenv
 load_dotenv()
+# client = genai.Client()
 
 
 
@@ -437,3 +438,6 @@ def play_game(game_id):
     except Exception as e:
         app.logger.error(f"Error in play_game: {str(e)}")
         return "Error loading game", 500
+    
+if __name__ == "__main__":
+    app.run(debug=True, host='127.0.0.1', port=5000)
