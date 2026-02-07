@@ -12,8 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
 app = flask.Flask(__name__)
