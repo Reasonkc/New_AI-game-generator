@@ -280,9 +280,9 @@ Return ONLY the complete HTML code with no explanations or markdown formatting. 
         
         return jsonify({
             "game_id": game_id,
-            "html": game_html,
             "title": enhanced_prompt.get('title', 'Untitled Game'),
-            "file_path": game_path
+            "status": "created",
+            "play_url": f"/play_game/{game_id}"
         })
         
     except Exception as e:

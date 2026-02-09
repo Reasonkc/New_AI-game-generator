@@ -122,29 +122,16 @@ export default function Create() {
       if (response.ok) {
         const data = await response.json();
         console.log("Generated game response:", data);
-        console.log("HTML length:", data.html?.length);
-        console.log("HTML ends with:", data.html?.slice(-50));
+        setGameId(data.game_id);
+        setTitle(data.title);
         
-        // Check for truncation indicators
-        if (data.html?.includes('...') || data.html?.endsWith('...')) {
-          console.warn("HTML appears to be truncated!");
-        }
+        // Fetch HTML separately
+        const htmlResponse = await fetch(`http://127.0.0.1:5000${data.play_url}`);
+        const html = await htmlResponse.text();
+        setGameHtml(html);
         
-        // if (validateGameHtml(data.html)) {
-          setGameHtml(data.html);
-          setGameId(data.game_id);
-          setTitle(data.title);
-          setCurrentStep(4);
-          showSuccess("Game generated successfully! You can now play, download, or modify it.");
-        // } else {
-        //   console.error("Invalid or truncated HTML received");
-        //   setError("The generated game appears to be incomplete. This might be due to response truncation. Please try again.");
-        //   setCurrentStep(2);
-        // }
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to generate game. Please try again.");
-        setCurrentStep(2);
+        setCurrentStep(4);
+        showSuccess("Game generated successfully! You can now play, download, or modify it.");
       }
     } catch (err) {
       setError("Network error. Please check if the backend is running.");
@@ -179,17 +166,18 @@ export default function Create() {
       if (response.ok) {
         const data = await response.json();
         console.log("Updated game:", data);
-        setGameHtml(data.html);
+        
+        // Fetch updated HTML
+        const htmlResponse = await fetch(`http://127.0.0.1:5000/play_game/${gameId}`);
+        const html = await htmlResponse.text();
+        setGameHtml(html);
+        
         setFeedbackPrompt("");
         showSuccess("Game updated successfully!");
         
-        // Refresh the game preview
         if (gamePreviewRef.current) {
           gamePreviewRef.current.src = gamePreviewRef.current.src;
         }
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to update game. Please try again.");
       }
     } catch (err) {
       setError("Network error. Please check if the backend is running.");

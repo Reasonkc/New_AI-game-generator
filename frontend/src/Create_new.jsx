@@ -63,13 +63,13 @@ export default function Create() {
       if (response.ok) {
         const data = await response.json();
         console.log("Generated game:", data);
-        setGameHtml(data.html);
         setGameId(data.game_id);
-        setLoading(false);
-      } else {
-        const errorText = await response.text();
-        console.error("Backend error:", errorText);
-        setError("Failed to generate game. Please try again.");
+        
+        // Fetch HTML separately
+        const htmlResponse = await fetch(`http://127.0.0.1:5000${data.play_url}`);
+        const html = await htmlResponse.text();
+        setGameHtml(html);
+        
         setLoading(false);
       }
     } catch (err) {
@@ -100,14 +100,14 @@ export default function Create() {
       if (response.ok) {
         const data = await response.json();
         console.log("Updated game:", data);
-        setGameHtml(data.html);
+        
+        // Fetch updated HTML
+        const htmlResponse = await fetch(`http://127.0.0.1:5000/play_game/${gameId}`);
+        const html = await htmlResponse.text();
+        setGameHtml(html);
+        
         setFeedback("");
         setShowFeedback(false);
-        setLoading(false);
-      } else {
-        const errorText = await response.text();
-        console.error("Backend error:", errorText);
-        setError("Failed to update game. Please try again.");
         setLoading(false);
       }
     } catch (err) {
