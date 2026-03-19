@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff } from "lucide-react";
+import { fetchWithTimeout } from "./utils/fetchWithTimeout";
 
 export default function Create() {
   const [prompt, setPrompt] = useState("");
@@ -65,11 +66,11 @@ export default function Create() {
     setCurrentStep(2);
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/enhance_prompt", {
+      const response = await fetchWithTimeout("http://127.0.0.1:5000/enhance_prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: prompt }),
-      });
+      }, 30000);
       
       if (response.ok) {
         const data = await response.json();
@@ -84,7 +85,7 @@ export default function Create() {
         setCurrentStep(1);
       }
     } catch (err) {
-      setError("Network error. Please check if the backend is running.");
+      setError(err.message || "Network error. Please check if the backend is running.");
       console.error("Error:", err);
       setCurrentStep(1);
     } finally {
@@ -98,13 +99,13 @@ export default function Create() {
     setError(null);
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/generate_game", {
+      const response = await fetchWithTimeout("http://127.0.0.1:5000/generate_game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           enhanced_prompt: promptToUse
         }),
-      });
+      }, 90000);
 
       if (response.ok) {
         const data = await response.json();
@@ -121,7 +122,7 @@ export default function Create() {
         showSuccess("Game generated successfully! You can now play, download, or modify it.");
       }
     } catch (err) {
-      setError("Network error. Please check if the backend is running.");
+      setError(err.message || "Network error. Please check if the backend is running.");
       console.error("Error:", err);
       setCurrentStep(2);
     } finally {
@@ -140,7 +141,7 @@ export default function Create() {
     setError(null);
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/update_game", {
+      const response = await fetchWithTimeout("http://127.0.0.1:5000/update_game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -148,7 +149,7 @@ export default function Create() {
           feedback: feedbackPrompt,
           current_html: gameHtml,
         }),
-      });
+      }, 90000);
       
       if (response.ok) {
         const data = await response.json();
@@ -167,7 +168,7 @@ export default function Create() {
         }
       }
     } catch (err) {
-      setError("Network error. Please check if the backend is running.");
+      setError(err.message || "Network error. Please check if the backend is running.");
       console.error("Error:", err);
     } finally {
       setIsUpdating(false);
