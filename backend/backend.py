@@ -264,23 +264,23 @@ Return ONLY the complete HTML code with no explanations or markdown formatting. 
         with open(game_path, "w", encoding="utf-8") as file:
             file.write(game_html)
         
-        # Save metadata
+        # Save metadata using local variables extracted from the if/else block
         metadata = {
             "id": game_id,
-            "title": enhanced_prompt.get('title', 'Untitled Game'),
-            "description": enhanced_prompt.get('description', ''),
+            "title": title,
+            "description": description,
             "created_at": datetime.now().isoformat(),
-            "genre": enhanced_prompt.get('genre', ''),
+            "genre": genre,
             "file_path": game_path
         }
-        
+
         metadata_path = os.path.join(game_folder, "metadata.json")
         with open(metadata_path, "w", encoding="utf-8") as file:
             json.dump(metadata, file, indent=2)
-        
+
         return jsonify({
             "game_id": game_id,
-            "title": enhanced_prompt.get('title', 'Untitled Game'),
+            "title": title,
             "status": "created",
             "play_url": f"/play_game/{game_id}"
         })

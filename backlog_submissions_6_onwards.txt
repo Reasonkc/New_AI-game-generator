@@ -1,0 +1,250 @@
+=====================================================
+AI GAME GENERATOR - BACKLOG SCRUM REPORT SUBMISSIONS (6+)
+Project Board: https://github.com/users/Reasonkc/projects/1
+Repo: https://github.com/Reasonkc/New_AI-game-generator
+=====================================================
+
+
+========================================
+RECENT BACKLOG ITEMS COMPLETED (6-10, Copy 3)
+========================================
+(Paste each one into the matching Canvas assignment)
+
+--- Recent Backlog Items Completed 6 ---
+
+F2.4 (#15) – Fix hardcoded API keys in Gemini integration files
+  F2.4.1 (#42) – Remove hardcoded Gemini API key from gameCreator.py
+  F2.4.2 (#43) – Remove hardcoded Gemini API key from gamemaker.py
+  F2.4.3 (#44) – Add dotenv loading and environment variable validation
+
+Description: SECURITY FIX – Removed hardcoded Gemini API keys from gameCreator.py (lines 4 and 27) and gamemaker.py (line 15). Replaced with environment variables loaded via python-dotenv. Added validation that GEMINI_API_KEY and CLAUDE_API_KEY exist before making API calls. Verified .env is in .gitignore to prevent future exposure.
+
+GitHub Issues: #15, #42, #43, #44 (all closed/completed)
+
+
+--- Recent Backlog Items Completed 7 ---
+
+F3.4 (#17) – Fix metadata crash when enhanced_prompt is a string
+  F3.4.1 (#45) – Use extracted local variables instead of .get() for metadata
+  F3.4.2 (#46) – Add type checking for enhanced_prompt in response builder
+
+Description: BUG FIX – In backend.py generate_game(), the metadata dictionary called enhanced_prompt.get() which crashes with AttributeError when enhanced_prompt is a plain string. Fixed by using the local variables (title, description, genre) already extracted in the if/else block on lines 146-161, ensuring both string and object types work correctly.
+
+GitHub Issues: #17, #45, #46 (all closed/completed)
+
+
+--- Recent Backlog Items Completed 8 ---
+
+F5.2 (#18) – Fix XSS vulnerability in Create.jsx dangerouslySetInnerHTML
+  F5.2.1 (#47) – Replace parseMarkdown() with react-markdown component
+  F5.2.2 (#48) – Remove unsafe dangerouslySetInnerHTML usage
+
+Description: SECURITY FIX – The custom parseMarkdown() function in Create.jsx did not sanitize AI-generated output, allowing potential XSS attacks via dangerouslySetInnerHTML. Removed the unsafe parseMarkdown() function entirely and replaced with the already-installed react-markdown library, which safely renders markdown without executing embedded HTML/script tags.
+
+GitHub Issues: #18, #47, #48 (all closed/completed)
+
+
+--- Recent Backlog Items Completed 9 ---
+
+F3.5 (#16) – Refactor buggy validate_generated_code() function
+  F3.5.1 (#49) – Remove false-positive error patterns from validation
+  F3.5.2 (#50) – Add proper HTML structure validation
+  F3.5.3 (#51) – Add type hints and meaningful return values to validate_generated_code()
+
+Description: BUG FIX – The validate_generated_code() function in gameCreator.py incorrectly flagged normal JavaScript syntax ('//', 'undefined', 'function()') as errors. Refactored to check for actual placeholder patterns (TODO, FIXME, PLACEHOLDER, '// ...'). Added HTML structure validation (checks for html/script tags). Changed return type from bool/raise to a dict with 'valid' boolean and 'issues' list. Added type hints.
+
+GitHub Issues: #16, #49, #50, #51 (all closed/completed)
+
+
+--- Recent Backlog Items Completed 10 ---
+
+F4.4 (#19) – Fix screenshot.py hardcoded blob_id and add error handling
+  F4.4.1 (#52) – Replace hardcoded blob_id with UUID-based filenames
+  F4.4.2 (#53) – Add try/except for Playwright browser launch failures
+  F4.4.3 (#54) – Add configurable timeout and viewport size parameters
+
+Description: BUG FIX – screenshot.py used a hardcoded blob_id = 'abcd', causing every screenshot to overwrite the same file. Replaced with UUID-based filenames (or optional game_id parameter). Added try/except wrapping for Playwright browser launch failures with error logging. Added configurable viewport_width, viewport_height, and timeout parameters with sensible defaults. Function now returns None on failure instead of crashing.
+
+GitHub Issues: #19, #52, #53, #54 (all closed/completed)
+
+
+--- Recent Backlog Items Completed Copy 3 ---
+
+F7.4 (#41) – Rate limiting for API abuse prevention
+  F1.3 (#27) – Input validation for empty prompts
+  F1.4 (#28) – Submit button with loading state animation
+
+Description: Completed the API security and UX validation layer. Flask-Limiter is configured with global limits (150/day, 35/hr) plus per-endpoint limits: /enhance_prompt (10/hr), /generate_game (5/hr), /update_game (5/hr). Tracks by IP address using in-memory storage. Frontend enforces input validation preventing empty prompt submissions and shows a loading spinner with "Enhancing with AI..." text during API calls.
+
+GitHub Issues: #41, #27, #28 (all closed/completed)
+
+
+========================================
+CURRENT BACKLOG ITEMS (7-10, Copy 3)
+========================================
+(Paste each one into the matching Canvas assignment)
+
+--- Current Backlog Items 7 ---
+
+F6.1 (#21) – Add data privacy notice and user consent flow
+  F6.1.1 (#81) – Create consent modal component with accept/decline buttons
+  F6.1.2 (#82) – Store consent preference in localStorage
+  F6.1.3 (#83) – Block prompt submission until consent is given
+  F6.2 (#39) – Data usage disclosure for third-party AI services
+  F6.3 (#40) – Privacy policy page accessible from footer
+
+Description: Per the traceability matrix (Amar KC's requirement): "The user should be informed about data usage and give consent before submitting their idea." Implementation includes a consent modal explaining that prompts are sent to Google Gemini and Anthropic Claude APIs, localStorage persistence of consent preference, blocking of prompt submission until consent is granted, and a dedicated /privacy route linked from all page footers.
+
+Priority: MEDIUM
+GitHub Issues: #21, #39, #40, #81, #82, #83
+Status: In Progress
+
+
+--- Current Backlog Items 8 ---
+
+F7.1 (#23) – Optimize response time for game generation pipeline
+  F7.1.1 (#84) – Add streaming support for Claude responses
+  F7.1.2 (#85) – Add progress indicators with estimated time remaining
+  F7.1.3 (#86) – Add request timeout handling on frontend
+
+Description: Per the traceability matrix (Rijan Khatri's requirement): "The system should process ideas and return results within a few seconds." Currently the two-step process (Gemini enhancement + Claude generation) takes 30+ seconds. Optimization includes streaming Claude responses to reduce perceived wait time, adding progress indicators with time estimates, and implementing frontend timeout handling with user-friendly error messages.
+
+Priority: MEDIUM
+GitHub Issues: #23, #84, #85, #86
+Status: In Progress
+
+
+--- Current Backlog Items 9 ---
+
+F7.2 (#20) – Add unit tests for backend API endpoints
+  F7.2.1 (#87) – Set up pytest with Flask test client fixture
+  F7.2.2 (#88) – Tests for POST /enhance_prompt endpoint
+  F7.2.3 (#89) – Tests for POST /generate_game endpoint
+  F7.2.4 (#90) – Tests for utility functions
+
+Description: The project currently has zero test coverage. Setting up pytest with pytest-flask for comprehensive backend testing. Includes Flask test client fixture with mocked Gemini/Claude API clients, tests for all POST endpoints (enhance_prompt, generate_game, update_game) covering valid requests, missing fields, and edge cases, plus tests for utility functions (sanitize_game_id, extract_html_from_response).
+
+Priority: MEDIUM
+GitHub Issues: #20, #87, #88, #89, #90
+Status: In Progress
+
+
+--- Current Backlog Items 10 ---
+
+F5.3 (#22) – Connect HomePage to real backend games instead of hardcoded samples
+  F5.3.1 (#91) – Fetch games from backend on HomePage load
+  F5.3.2 (#92) – Handle empty state and loading skeleton
+  F5.3.3 (#93) – Display actual game count in stats section
+
+Description: HomePage.jsx currently displays 6 hardcoded sample games with fake stats (1000+ games, 50K+ players). Connecting to the real backend GET /list_games endpoint to display actual generated games. Includes loading skeleton during fetch, empty state when no games exist, and replacing hardcoded stats with real game counts from the API.
+
+Priority: LOW
+GitHub Issues: #22, #91, #92, #93
+Status: In Progress
+
+
+--- Current Backlog Items Copy 3 ---
+
+F7.3 (#24) – Deploy application to AWS Amplify
+  F7.3.1 (#94) – Configure AWS Amplify for React frontend deployment
+  F7.3.2 (#95) – Set up backend hosting with environment variables
+  F7.3.3 (#96) – Configure CORS and CI/CD pipeline from GitHub
+
+Description: Deploy the full-stack AI Game Generator to AWS Amplify for production hosting. Includes configuring Amplify build settings for the Vite React frontend, setting up secure backend hosting with environment variable management for API keys, updating CORS settings for production URLs, and establishing a CI/CD pipeline that auto-deploys from the main branch on GitHub.
+
+Prerequisites: All security issues fixed (F2.4, F5.2 completed), application tested locally.
+
+Priority: LOW
+GitHub Issues: #24, #94, #95, #96
+Status: In Progress
+
+
+========================================
+NEXT BACKLOG ITEMS (6-10, Copy 3)
+========================================
+(Paste each one into the matching Canvas assignment)
+
+--- Next Backlog Item(s) 6 ---
+
+F8 (#55) – Game History & Gallery Browser
+  F8.1 (#56) – Game history page with grid layout
+  F8.2 (#57) – Game card component with thumbnail and metadata
+  F8.3 (#58) – Search and filter games by title, genre, and date
+  F8.4 (#59) – Delete saved games functionality
+
+Description: Create a dedicated game gallery page where users can browse all previously generated games. Includes a responsive grid layout with game cards showing title, genre, and creation date. Users can search and filter games by title, genre, or date. Adds a DELETE /delete_game/<game_id> backend endpoint with a confirmation modal for removing saved games.
+
+Priority: MEDIUM
+GitHub Issues: #55, #56, #57, #58, #59
+Status: Todo
+
+
+--- Next Backlog Item(s) 7 ---
+
+F9 (#60) – Error Recovery & Retry Mechanism
+  F9.1 (#61) – Automatic retry for failed API calls with exponential backoff
+  F9.2 (#62) – Error boundary component for graceful React crash handling
+  F9.3 (#63) – Network connectivity detection and offline warning
+  F9.4 (#64) – Save draft game prompt to localStorage for recovery
+
+Description: Implement robust error handling across the application. Adds automatic retry with exponential backoff (1s, 2s, 4s) for failed API calls. Creates a React ErrorBoundary component for graceful crash handling. Detects network connectivity loss and shows a warning banner. Auto-saves user's prompt and title to localStorage so input survives page refreshes.
+
+Priority: MEDIUM
+GitHub Issues: #60, #61, #62, #63, #64
+Status: Todo
+
+
+--- Next Backlog Item(s) 8 ---
+
+F10 (#65) – Game Template & Genre Presets
+  F10.1 (#66) – Predefined game genre template data
+  F10.2 (#67) – Template selection UI with preview cards
+  F10.3 (#68) – Template-based prompt pre-filling
+
+Description: Provide predefined game templates for common genres to help users who want quick results or inspiration. Includes curated prompt templates for platformer, puzzle, shooter, racing, and adventure genres. Adds a template picker section on the Create page with visual cards showing genre name, icon, and sample description. Selecting a template auto-fills the title and description fields.
+
+Priority: LOW
+GitHub Issues: #65, #66, #67, #68
+Status: Todo
+
+
+--- Next Backlog Item(s) 9 ---
+
+F11 (#69) – Multi-Agent Game Generation Workflow
+  F11.1 (#70) – Sequential agent pipeline design
+  F11.2 (#71) – Code quality review agent for generated games
+  F11.3 (#72) – Agent status tracking UI with pipeline visualization
+
+Description: Implement a multi-agent pipeline for higher quality game output. Gemini enhances the prompt, Claude generates the game code, and a review agent validates the output for common Phaser.js errors, missing functions, and runtime issues. Includes a visual pipeline UI on the frontend displaying which agent is currently working and the progress of each stage.
+
+Priority: LOW
+GitHub Issues: #69, #70, #71, #72
+Status: Todo
+
+
+--- Next Backlog Item(s) 10 ---
+
+F12 (#73) – Performance Monitoring & Analytics
+  F12.1 (#74) – API response time logging middleware
+  F12.2 (#75) – Game generation success/failure tracking
+  F12.3 (#76) – Usage statistics endpoint
+
+Description: Add backend monitoring to track application health and usage. Includes Flask middleware logging response times for all API endpoints, tracking game generation success/failure rates with reasons, and a GET /stats endpoint returning total games created, success rate, and average generation time.
+
+Priority: LOW
+GitHub Issues: #73, #74, #75, #76
+Status: Todo
+
+
+--- Next Backlog Item(s) Copy 3 ---
+
+F13 (#77) – Accessibility Improvements
+  F13.1 (#78) – ARIA labels and keyboard navigation for all UI elements
+  F13.2 (#79) – Screen reader compatible game descriptions
+  F13.3 (#80) – High contrast mode toggle
+
+Description: Improve accessibility across the application to meet WCAG guidelines. Adds proper ARIA labels, aria-describedby, and role attributes to all interactive elements. Ensures full keyboard navigation without requiring a mouse. Makes all game cards and preview sections accessible to screen readers. Adds a high contrast mode toggle in the navbar for users with visual impairments.
+
+Priority: LOW
+GitHub Issues: #77, #78, #79, #80
+Status: Todo

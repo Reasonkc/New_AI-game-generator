@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff } from "lucide-react";
 
 export default function Create() {
@@ -27,20 +28,6 @@ export default function Create() {
     const notTruncated = !html.endsWith('...') && !html.includes('...');
     
     return hasHtmlTags && hasPhaser && notTruncated;
-  };
-
-  // Simple markdown to HTML converter for basic formatting
-  const parseMarkdown = (markdown) => {
-    if (!markdown) return '';
-    return markdown
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-      .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-      .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-      .replace(/^\* (.*$)/gm, '<li>$1</li>')
-      .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-      .replace(/\n/g, '<br>');
   };
 
   // Show success message temporarily
@@ -514,10 +501,9 @@ export default function Create() {
                         </div>
                       ) : (
                         <div>
-                          <div 
-                            className="prose prose-emerald max-w-none text-gray-800 leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: parseMarkdown(enhancedPrompt.description || enhancedPrompt) }}
-                          />
+                          <div className="prose prose-emerald max-w-none text-gray-800 leading-relaxed">
+                            <ReactMarkdown>{enhancedPrompt.description || enhancedPrompt}</ReactMarkdown>
+                          </div>
                           
                           {enhancedPrompt.title && (
                             <div className="mt-6 pt-6 border-t border-emerald-200">

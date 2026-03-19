@@ -1,7 +1,16 @@
 from google import genai
 import json
+import os
 from pydantic import BaseModel
-client = genai.Client(api_key="AIzaSyAFSjqpFOK2aG1jilF5RciOpjNbQYNi4cE")
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY must be set as an environment variable")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 class responseBase(BaseModel):
     title: str
@@ -24,7 +33,7 @@ class scene(BaseModel):
 
 
 def create_json(prompt):
-    client = genai.Client(api_key="AIzaSyAFSjqpFOK2aG1jilF5RciOpjNbQYNi4cE")
+    client = genai.Client(api_key=GEMINI_API_KEY)
     query = f"""You are a game design assistant. The user will give you a short description of a game idea in natural language.
             Your task is to generate a structured JSON object that represents this game concept. Donot add sound assets or music to the game.
             The idea is {prompt}."""
@@ -169,31 +178,40 @@ def game_logic_generator(sprite_textures,logic_functions, config):
     parsed_data = json.loads(response.text)
     return parsed_data
 
-def validate_generated_code(code, required_functions):
-    """Validate that all required functions are implemented in the generated code."""
-    # Basic validation that all required functions exist
-    missing_functions = []
-    for func in required_functions:
-        if func not in code:
-            missing_functions.append(func)
-    
+def validate_generated_code(code: str, required_functions: list[str]) -> dict:
+    """Validate that generated code is complete and contains required functions.
+
+    Returns a dict with 'valid' (bool) and 'issues' (list of strings).
+    """
+    issues = []
+
+    # Check that all required functions exist in the code
+    missing_functions = [func for func in required_functions if func not in code]
     if missing_functions:
-        raise ValueError(f"Missing required functions: {', '.join(missing_functions)}")
-    
-    # Check for common errors
-    common_errors = [
-        "TODO", 
-        "//", 
-        "/* */", 
-        "function()", 
-        "undefined"
+        issues.append(f"Missing required functions: {', '.join(missing_functions)}")
+
+    # Check for placeholder/incomplete code patterns (not normal JS syntax)
+    placeholder_patterns = [
+        "TODO",
+        "FIXME",
+        "PLACEHOLDER",
+        "NOT IMPLEMENTED",
+        "// ...",
+        "/* ... */",
     ]
-    
-    for error in common_errors:
-        if error in code:
-            raise ValueError(f"Detected potential incomplete code: {error}")
-    
-    return True
+    for pattern in placeholder_patterns:
+        if pattern in code:
+            issues.append(f"Detected placeholder code: {pattern}")
+
+    # Validate basic HTML structure
+    if "<html" not in code.lower():
+        issues.append("Missing <html> tag")
+    if "</html>" not in code.lower():
+        issues.append("Missing closing </html> tag - code may be truncated")
+    if "<script" not in code.lower():
+        issues.append("Missing <script> tag - no JavaScript found")
+
+    return {"valid": len(issues) == 0, "issues": issues}
 
 def create_game(config):
     # Generate the game plan
@@ -223,11 +241,10 @@ def create_game(config):
     game_logic = game_logic_result["code"]
     
     # Validate game logic
-    try:
-        validate_generated_code(game_logic, plan["logic_functions"])
-    except ValueError as e:
-        print(f"Warning: Game logic validation issue: {e}")
-        # Here you could implement retry logic
+    validation = validate_generated_code(game_logic, plan["logic_functions"])
+    if not validation["valid"]:
+        for issue in validation["issues"]:
+            print(f"Warning: Game logic validation issue: {issue}")
     
     # Combine and format the game
     game_logic = game_logic.replace("scene: [GameScene]", "scene: [BootScene, GameScene]")

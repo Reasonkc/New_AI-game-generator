@@ -1,9 +1,21 @@
 import anthropic
 from google import genai
 import json
+import os
 from pydantic import BaseModel
 import re
-client = anthropic.Anthropic()
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+
+if not GEMINI_API_KEY or not CLAUDE_API_KEY:
+    raise ValueError("GEMINI_API_KEY and CLAUDE_API_KEY must be set as environment variables")
+
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+
 class responseBase(BaseModel):
     title: str
     description: str
@@ -12,7 +24,7 @@ class responseBase(BaseModel):
     game_logic: str
     instructions: str
 def create_json(prompt):
-    client = genai.Client(api_key="AIzaSyAFSjqpFOK2aG1jilF5RciOpjNbQYNi4cE")
+    client = genai.Client(api_key=GEMINI_API_KEY)
     query = f"""You are a game design assistant. The user will give you a short description of a game idea in natural language.
             Your task is to generate a structured JSON object that represents this game concept. Donot add sound assets or music to the game.
             The idea is {prompt}."""
