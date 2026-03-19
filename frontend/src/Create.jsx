@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff } from "lucide-react";
+import { downloadGame } from "./utils/downloadGame";
 
 export default function Create() {
   const [prompt, setPrompt] = useState("");
@@ -175,19 +176,7 @@ export default function Create() {
   };
 
   // Download game as HTML file
-  const downloadGame = () => {
-    if (!gameHtml) return;
-    
-    const blob = new Blob([gameHtml], { type: 'text/html' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${title || 'ai-game'}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
+  const handleDownload = () => downloadGame(gameHtml, title || "ai-game");
 
   // Reset to start over
   const resetGame = () => {
@@ -606,7 +595,7 @@ export default function Create() {
                   <div className="flex space-x-3">
                     <button
                       className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl transition-colors duration-200 flex items-center backdrop-blur-sm"
-                      onClick={downloadGame}
+                      onClick={handleDownload}
                     >
                       <Download size={20} className="mr-2" />
                       Download HTML

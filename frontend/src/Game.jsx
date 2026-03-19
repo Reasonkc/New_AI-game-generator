@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router';
 import { ArrowLeft, Play, Repeat, Loader, Download, Share2, RefreshCw, Maximize, Code, Gamepad2, Star, Clock } from 'lucide-react';
+import { downloadGame } from './utils/downloadGame';
 
 // Generate a simple sample game HTML for demo purposes
 const generateSampleGameHTML = (title) => {
@@ -126,19 +127,7 @@ export default function GamePage() {
   };
 
   // Download game HTML
-  const downloadGame = () => {
-    if (!gameHtml) return;
-    
-    const blob = new Blob([gameHtml], { type: 'text/html' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${game?.title || 'game'}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
+  const handleDownload = () => downloadGame(gameHtml, game?.title || "game");
 
   // Share game
   const shareGame = async () => {
@@ -246,7 +235,7 @@ export default function GamePage() {
                     </button>
                     <button 
                       className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl transition-colors duration-200 flex items-center backdrop-blur-sm"
-                      onClick={downloadGame}
+                      onClick={handleDownload}
                     >
                       <Download size={18} className="mr-2" />
                       Download
@@ -364,7 +353,7 @@ export default function GamePage() {
                   </button>
                   
                   <button
-                    onClick={downloadGame}
+                    onClick={handleDownload}
                     className="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors duration-200 flex items-center justify-center"
                   >
                     <Download size={18} className="mr-2" />
