@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff } from "lucide-react";
+import TemplateSelector from "./components/TemplateSelector";
 
 export default function Create() {
   const [prompt, setPrompt] = useState("");
@@ -384,6 +385,13 @@ export default function Create() {
                 </div>
 
                 <div className="mt-6">
+                  <TemplateSelector
+                    onSelect={({ title: tpl_title, description }) => {
+                      setTitle(tpl_title);
+                      setPrompt(description);
+                    }}
+                  />
+
                   <label className="block text-sm font-semibold text-gray-900 mb-3">
                     Game Description
                   </label>
