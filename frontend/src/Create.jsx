@@ -1,6 +1,6 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff } from "lucide-react";
+import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff, Maximize, Minimize } from "lucide-react";
 import ConsentModal, { hasConsent } from "./components/ConsentModal";
 
 export default function Create() {
@@ -18,7 +18,9 @@ export default function Create() {
   const [successMessage, setSuccessMessage] = useState("");
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editablePrompt, setEditablePrompt] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const gamePreviewRef = useRef(null);
+  const gameContainerRef = useRef(null);
 
   // Check if HTML is complete and valid
   const validateGameHtml = (html) => {
@@ -31,6 +33,13 @@ export default function Create() {
     
     return hasHtmlTags && hasPhaser && notTruncated;
   };
+
+  // ESC key exits fullscreen
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === "Escape") setIsFullscreen(false); };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, []);
 
   // Show success message temporarily
   const showSuccess = (message) => {
@@ -648,21 +657,35 @@ export default function Create() {
               </div>
               
               {/* Game Preview */}
-              <div className="p-8">
-                <div className="bg-gray-900 rounded-xl overflow-hidden shadow-2xl">
-                  <div className="bg-gray-800 px-4 py-2 flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <div className="ml-4 text-gray-400 text-sm">Game Preview</div>
+              <div className={isFullscreen ? "fixed inset-0 z-50 bg-black flex flex-col" : "p-8"}>
+                <div ref={gameContainerRef} className={`bg-gray-900 overflow-hidden shadow-2xl ${isFullscreen ? "flex-1 flex flex-col" : "rounded-xl"}`}>
+                  <div className="bg-gray-800 px-4 py-2 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                      <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      <span className="ml-4 text-gray-400 text-sm">Game Preview</span>
+                    </div>
+                    <button
+                      onClick={() => setIsFullscreen(!isFullscreen)}
+                      className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                      title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                    >
+                      {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                    </button>
                   </div>
                   <iframe
                     ref={gamePreviewRef}
                     srcDoc={gameHtml}
                     title="Game Preview"
-                    className="w-full h-[500px] border-0 bg-white"
+                    className={`w-full border-0 bg-white ${isFullscreen ? "flex-1" : "h-[500px]"}`}
                     sandbox="allow-scripts allow-same-origin"
                   />
+                  {isFullscreen && (
+                    <div className="bg-gray-800 px-4 py-2 text-center text-gray-400 text-sm">
+                      Press ESC or click the minimize button to exit fullscreen
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
