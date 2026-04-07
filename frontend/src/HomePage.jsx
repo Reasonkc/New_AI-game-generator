@@ -87,12 +87,25 @@ export default function HomePage() {
     { id: 'strategy', name: 'Strategy', icon: Code }
   ];
 
+  const [realGameCount, setRealGameCount] = useState(0);
+  const [loadingGames, setLoadingGames] = useState(true);
+
   useEffect(() => {
-    // Load saved games from localStorage
-    const savedGames = localStorage.getItem("generatedGames");
-    if (savedGames) {
-      setGames(JSON.parse(savedGames));
-    }
+    const fetchGames = async () => {
+      try {
+        const response = await fetch("http://127.0.0.1:5000/list_games");
+        if (response.ok) {
+          const data = await response.json();
+          setGames(data.games || []);
+          setRealGameCount(data.games?.length || 0);
+        }
+      } catch (err) {
+        console.log("Backend not available, showing sample games");
+      } finally {
+        setLoadingGames(false);
+      }
+    };
+    fetchGames();
   }, []);
 
   const filteredGames = featuredGames.filter(game => {
@@ -139,7 +152,7 @@ export default function HomePage() {
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-              <div className="text-3xl font-bold mb-2">1000+</div>
+              <div className="text-3xl font-bold mb-2">{realGameCount > 0 ? realGameCount : "0"}</div>
               <div className="text-indigo-200">Games Created</div>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
@@ -369,7 +382,7 @@ export default function HomePage() {
               © 2024 AI Game Generator. Built with ❤️ and AI.
             </p>
             <div className="flex space-x-6 text-sm text-gray-400">
-              <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+              <a href="/privacy" className="hover:text-white transition-colors">Privacy Policy</a>
               <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
               <a href="#" className="hover:text-white transition-colors">Contact Us</a>
             </div>

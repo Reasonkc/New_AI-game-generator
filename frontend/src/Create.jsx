@@ -1,9 +1,11 @@
 import { useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff } from "lucide-react";
+import ConsentModal, { hasConsent } from "./components/ConsentModal";
 
 export default function Create() {
   const [prompt, setPrompt] = useState("");
+  const [consentGiven, setConsentGiven] = useState(hasConsent());
   const [enhancedPrompt, setEnhancedPrompt] = useState("");
   const [gameHtml, setGameHtml] = useState("");
   const [title, setTitle] = useState("");
@@ -204,7 +206,9 @@ export default function Create() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">{/* Success Message */}
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <ConsentModal onAccept={() => setConsentGiven(true)} />
+      {/* Success Message */}
       {successMessage && (
         <div className="fixed top-4 right-4 z-50 flex items-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg">
           <CheckCircle size={20} />
@@ -401,12 +405,12 @@ export default function Create() {
                 <div className="mt-8 flex justify-center">
                   <button
                     className={`px-12 py-4 rounded-xl font-semibold text-lg transition-all duration-200 transform ${
-                      loading || !prompt.trim()
+                      loading || !prompt.trim() || !consentGiven
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         : 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 hover:scale-105 shadow-lg hover:shadow-xl'
                     }`}
                     onClick={handlePromptSubmit}
-                    disabled={loading || !prompt.trim()}
+                    disabled={loading || !prompt.trim() || !consentGiven}
                   >
                     {loading ? (
                       <div className="flex items-center">
@@ -529,7 +533,7 @@ export default function Create() {
                   </div>
                 )}
 
-                {/* Loading indicator for game generation */}
+                {/* Loading indicator for game generation with progress */}
                 {currentStep === 3 && loading && (
                   <div className="mb-8 text-center">
                     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-8">
@@ -539,7 +543,11 @@ export default function Create() {
                           <div className="absolute inset-0 w-20 h-20 border-4 border-t-blue-600 rounded-full animate-spin"></div>
                         </div>
                         <h3 className="text-xl font-bold text-gray-900 mb-2">Creating Your Game</h3>
-                        <p className="text-gray-600 mb-4">AI is generating a fully functional Phaser.js game with proper physics and mechanics</p>
+                        <p className="text-gray-600 mb-2">AI is generating a fully functional Phaser.js game with proper physics and mechanics</p>
+                        <div className="w-full max-w-xs bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
+                          <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full animate-pulse" style={{width: '75%', transition: 'width 30s ease-out'}}></div>
+                        </div>
+                        <p className="text-xs text-gray-400 mb-4">Estimated time: 20–40 seconds</p>
                         <div className="flex items-center space-x-4 text-sm text-gray-500">
                           <div className="flex items-center">
                             <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
