@@ -140,10 +140,17 @@ export default function Create() {
       return;
     }
 
+    if (!gameHtml) {
+      setError("No game HTML found. Please generate a game first.");
+      return;
+    }
+
     setIsUpdating(true);
     setError(null);
 
     try {
+      console.log("Sending update request:", { game_id: gameId, feedback: feedbackPrompt, html_length: gameHtml.length });
+
       const response = await fetch("http://127.0.0.1:5000/update_game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -153,25 +160,34 @@ export default function Create() {
           current_html: gameHtml,
         }),
       });
-      
+
+      console.log("Update response status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
-        console.log("Updated game:", data);
+        console.log("Updated game response:", data);
 
-        // Use the HTML directly from the response instead of re-fetching
         if (data.html) {
           setGameHtml(data.html);
+          showSuccess("Game updated successfully!");
+        } else {
+          setError("Server returned empty game. Please try again.");
         }
 
         setFeedbackPrompt("");
-        showSuccess("Game updated successfully!");
       } else {
-        const errData = await response.json();
-        setError(errData.error || "Failed to update game. Please try again.");
+        let errMsg = "Failed to update game. Please try again.";
+        try {
+          const errData = await response.json();
+          errMsg = errData.error || errMsg;
+        } catch (e) {
+          errMsg = `Server error (${response.status}). Please try again.`;
+        }
+        setError(errMsg);
       }
     } catch (err) {
+      console.error("Update error:", err);
       setError(err.message || "Network error. Please check if the backend is running.");
-      console.error("Error:", err);
     } finally {
       setIsUpdating(false);
     }
