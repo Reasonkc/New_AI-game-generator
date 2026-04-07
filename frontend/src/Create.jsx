@@ -113,12 +113,14 @@ export default function Create() {
         console.log("Generated game response:", data);
         setGameId(data.game_id);
         setTitle(data.title);
-        
-        // Fetch HTML separately
-        const htmlResponse = await fetch(`http://127.0.0.1:5000${data.play_url}`);
-        const html = await htmlResponse.text();
-        setGameHtml(html);
-        
+
+        // Fetch HTML via get_game (returns JSON with html field)
+        const gameResponse = await fetch(`http://127.0.0.1:5000/get_game/${data.game_id}`);
+        if (gameResponse.ok) {
+          const gameData = await gameResponse.json();
+          setGameHtml(gameData.html);
+        }
+
         setCurrentStep(4);
         showSuccess("Game generated successfully! You can now play, download, or modify it.");
       }
@@ -155,21 +157,20 @@ export default function Create() {
       if (response.ok) {
         const data = await response.json();
         console.log("Updated game:", data);
-        
-        // Fetch updated HTML
-        const htmlResponse = await fetch(`http://127.0.0.1:5000/play_game/${gameId}`);
-        const html = await htmlResponse.text();
-        setGameHtml(html);
-        
+
+        // Use the HTML directly from the response instead of re-fetching
+        if (data.html) {
+          setGameHtml(data.html);
+        }
+
         setFeedbackPrompt("");
         showSuccess("Game updated successfully!");
-        
-        if (gamePreviewRef.current) {
-          gamePreviewRef.current.src = gamePreviewRef.current.src;
-        }
+      } else {
+        const errData = await response.json();
+        setError(errData.error || "Failed to update game. Please try again.");
       }
     } catch (err) {
-      setError("Network error. Please check if the backend is running.");
+      setError(err.message || "Network error. Please check if the backend is running.");
       console.error("Error:", err);
     } finally {
       setIsUpdating(false);
