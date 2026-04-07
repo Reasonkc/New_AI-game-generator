@@ -248,18 +248,21 @@ TECHNICAL SPECS:
 
 Return ONLY the complete HTML code. No explanations, no markdown."""
 
-        response = claude_client.messages.create(
+        # Use streaming to avoid SDK timeout on large responses
+        result_text = ""
+        with claude_client.messages.stream(
             model="claude-sonnet-4-20250514",
             max_tokens=20000,
             temperature=0.7,
             messages=[{
-                "role": "user", 
+                "role": "user",
                 "content": claude_prompt
             }]
-        )
-        
-        game_html = extract_html_from_response(response.content[0].text)
-        print(game_html)
+        ) as stream:
+            for text in stream.text_stream:
+                result_text += text
+
+        game_html = extract_html_from_response(result_text)
         
         # Generate unique game ID and save the game
         game_id = str(uuid.uuid4())
@@ -327,7 +330,9 @@ CRITICAL RULES:
 
 Return ONLY the complete updated HTML file. No explanations, no markdown."""
 
-        response = claude_client.messages.create(
+        # Use streaming to avoid SDK timeout on large requests
+        result_text = ""
+        with claude_client.messages.stream(
             model="claude-sonnet-4-20250514",
             max_tokens=32000,
             temperature=0.7,
@@ -335,9 +340,11 @@ Return ONLY the complete updated HTML file. No explanations, no markdown."""
                 "role": "user",
                 "content": claude_prompt
             }]
-        )
-        
-        updated_html = extract_html_from_response(response.content[0].text)
+        ) as stream:
+            for text in stream.text_stream:
+                result_text += text
+
+        updated_html = extract_html_from_response(result_text)
         
         # If game_id is provided, update the saved file
         if game_id:
