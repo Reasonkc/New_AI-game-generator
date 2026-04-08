@@ -80,7 +80,7 @@ export default function Create() {
       const response = await fetch("http://127.0.0.1:5000/enhance_prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt }),
+        body: JSON.stringify({ prompt: prompt, engine: gameEngine }),
       });
       
       if (response.ok) {
@@ -509,7 +509,7 @@ export default function Create() {
                         {currentStep === 2 ? 'AI Enhancement Complete' : 'Generating Your Game'}
                       </h2>
                       <p className="text-emerald-100 mt-1">
-                        {currentStep === 2 ? 'Review and edit your enhanced game concept' : 'Creating an amazing Phaser.js game with full physics'}
+                        {currentStep === 2 ? 'Review and edit your enhanced game concept' : `Creating an amazing ${gameEngine === 'threejs' ? '3D Three.js' : '2D PhaserJS'} game`}
                       </p>
                     </div>
                   </div>
@@ -607,7 +607,7 @@ export default function Create() {
                           <div className="absolute inset-0 w-20 h-20 border-4 border-t-blue-600 rounded-full animate-spin"></div>
                         </div>
                         <h3 className="text-xl font-bold text-gray-900 mb-2">Creating Your Game</h3>
-                        <p className="text-gray-600 mb-2">AI is generating a fully functional Phaser.js game with proper physics and mechanics</p>
+                        <p className="text-gray-600 mb-2">{`AI is generating a fully functional ${gameEngine === 'threejs' ? '3D game with lighting and physics' : '2D game with sprites and mechanics'}`}</p>
                         <div className="w-full max-w-xs bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
                           <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full animate-pulse" style={{width: '75%', transition: 'width 30s ease-out'}}></div>
                         </div>
@@ -615,15 +615,15 @@ export default function Create() {
                         <div className="flex items-center space-x-4 text-sm text-gray-500">
                           <div className="flex items-center">
                             <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                            Enhanced with Claude AI
+                            Powered by Claude AI
                           </div>
                           <div className="flex items-center">
                             <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                            Full Physics Engine
+                            {gameEngine === 'threejs' ? '3D Rendering & Lighting' : '2D Physics Engine'}
                           </div>
                           <div className="flex items-center">
                             <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
-                            Interactive Gameplay
+                            {gameEngine === 'threejs' ? 'Camera & Shadows' : 'Sprite Animations'}
                           </div>
                         </div>
                       </div>

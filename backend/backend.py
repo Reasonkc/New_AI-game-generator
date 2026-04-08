@@ -85,48 +85,96 @@ def enhance_prompt():
         data = request.get_json()
         if not data or 'prompt' not in data:
             return jsonify({"error": "Missing 'prompt' in request"}), 400
-            
+
         prompt = data['prompt']
-        
+        engine = data.get('engine', 'phaser')
+
         if not prompt or len(prompt.strip()) == 0:
             return jsonify({"error": "Prompt cannot be empty"}), 400
-        
-        query = f"""You are a game design assistant. The user will give you a short description of a game idea.
-Your task is to enhance and refine this prompt into a detailed game concept suitable for creating a PhaserJS game.
 
-Make the game concept:
-- Clear and specific
-- Implementable in PhaserJS
-- Fun and engaging
-- Not too complex for a single HTML file
-- Include specific mechanics, controls, and objectives
-- Donot include music and particle emitters.
+        if engine == "threejs":
+            engine_context = """The game will be built as a 3D browser game using Three.js.
+Think in terms of 3D space: camera angles, lighting, 3D models made from basic geometries (boxes, cylinders, spheres).
+Suitable genres: driving, parking, simulation, racing, flight, 3D exploration, tower defense with 3D view.
+Controls should consider 3D movement (forward/backward, turning, camera rotation)."""
+        else:
+            engine_context = """The game will be built as a 2D browser game using PhaserJS.
+Think in terms of 2D space: side-scrolling, top-down, or fixed-screen views.
+Suitable genres: platformers, shooters, puzzles, arcade, match-3, endless runners.
+All sprites will be created programmatically or loaded from free sprite libraries."""
 
-Original prompt: {prompt}
+        query = f"""You are an expert game designer. The user has a game idea. Your job is to transform it into a detailed, well-structured game concept.
 
-Generate a refined game concept with all the necessary details."""
-        
+ENGINE CONTEXT:
+{engine_context}
+
+USER'S IDEA: {prompt}
+
+Enhance this into a polished game concept. Your response must include ALL of the following clearly labeled sections:
+
+**TITLE:** A creative, catchy game title (not generic)
+
+**GENRE:** The specific game genre (e.g., "Top-down parking simulation", "Side-scrolling platformer", "Space shooter")
+
+**DESCRIPTION:** A detailed 3-4 paragraph game description covering:
+- Core gameplay loop (what does the player do moment-to-moment?)
+- Progression system (how does difficulty increase?)
+- Win/lose conditions
+- What makes it fun and engaging
+
+**GAME MECHANICS:** A bullet list of specific mechanics:
+- Player movement and controls
+- Enemy/obstacle behavior
+- Scoring system
+- Power-ups or special abilities
+- Collision and interaction rules
+
+**VISUAL STYLE:** Describe the visual aesthetic (colors, mood, perspective)
+
+**CONTROLS:** Exact control scheme (which keys do what)
+
+**OBJECTIVES:** Clear primary and secondary objectives
+
+Do NOT include music or sound design. Focus on gameplay and visuals only."""
+
         client = genai.Client(api_key=GEMINI_API_KEY)
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash", contents= query
+            model="gemini-2.5-flash", contents=query
         )
-        
+
         response_text = response.text
-        
-        parsed_data = {
-            "title": "AI Generated Game",
+
+        # Extract title from response if present
+        title = "AI Generated Game"
+        genre = "Action"
+        visual_style = "Detailed and polished"
+        controls = "Arrow keys or WASD"
+        objectives = "Complete the game objectives"
+
+        for line in response_text.split('\n'):
+            line_clean = line.strip().replace('**', '')
+            if line_clean.upper().startswith('TITLE:'):
+                title = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('GENRE:'):
+                genre = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('VISUAL STYLE:'):
+                visual_style = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('CONTROLS:'):
+                controls = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('OBJECTIVES:'):
+                objectives = line_clean.split(':', 1)[1].strip()
+
+        return jsonify({
+            "title": title,
             "description": response_text,
-            "genre": "Action",
-            "game_mechanics": ["movement", "collision"],
-            "visual_style": "Simple geometric shapes",
-            "controls": "Arrow keys or WASD",
-            "objectives": "Complete the game objectives"
-            
-        }
-        
-        return jsonify(parsed_data)
-        
+            "genre": genre,
+            "game_mechanics": ["movement", "collision", "scoring"],
+            "visual_style": visual_style,
+            "controls": controls,
+            "objectives": objectives
+        })
+
     except Exception as e:
         app.logger.error(f"Error in enhance_prompt: {str(e)}")
         return jsonify({"error": "Failed to enhance prompt"}), 500
