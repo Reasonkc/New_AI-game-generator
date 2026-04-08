@@ -379,7 +379,7 @@ export default function HomePage() {
           
           <div className="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center">
             <p className="text-gray-400 text-sm mb-4 md:mb-0">
-              © 2024 AI Game Generator. Built with ❤️ and AI.
+              © 2026 AI Game Generator. Built for Senior Project.
             </p>
             <div className="flex space-x-6 text-sm text-gray-400">
               <a href="/privacy" className="hover:text-white transition-colors">Privacy Policy</a>
