@@ -160,7 +160,7 @@ def generate_game():
             controls = enhanced_prompt.get('controls', 'Arrow keys or WASD')
             objectives = enhanced_prompt.get('objectives', 'Complete the game objectives')
 
-        claude_prompt = f"""Create a complete, fully functional HTML file for a PhaserJS game.
+        claude_prompt = f"""Create a complete, polished, visually impressive HTML file for a PhaserJS game.
 
 GAME CONCEPT:
 Title: {title}
@@ -171,46 +171,68 @@ Visual Style: {visual_style}
 Controls: {controls}
 Objectives: {objectives}
 
-MANDATORY TEXTURE CREATION PATTERN:
-You MUST create all textures in the preload() method using EXACTLY this pattern:
+ASSET STRATEGY — You have TWO options for each sprite. Use whichever produces the best visuals:
 
+OPTION A — Load free sprite images from the web in preload():
     preload() {{
-        // Create a player texture
+        // Example: load sprites from open-source game assets
+        this.load.image('player', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
+        this.load.image('star', 'https://labs.phaser.io/assets/sprites/star.png');
+        this.load.image('bomb', 'https://labs.phaser.io/assets/sprites/bomb.png');
+        this.load.image('platform', 'https://labs.phaser.io/assets/sprites/platform.png');
+        this.load.spritesheet('dude', 'https://labs.phaser.io/assets/sprites/dude.png', {{ frameWidth: 32, frameHeight: 48 }});
+    }}
+
+OPTION B — Generate detailed textures programmatically:
+    preload() {{
         const gfx = this.make.graphics({{ add: false }});
-        gfx.fillStyle(0xff0000);
-        gfx.fillRect(0, 0, 32, 32);
-        gfx.generateTexture('player', 32, 32);
+        // Layer multiple shapes for detailed characters
+        gfx.fillStyle(0x3366ff);
+        gfx.fillCircle(16, 10, 10);       // head
+        gfx.fillStyle(0x2255cc);
+        gfx.fillRect(8, 18, 16, 20);      // body
+        gfx.fillStyle(0x3366ff);
+        gfx.fillRect(4, 22, 8, 14);       // left arm
+        gfx.fillRect(20, 22, 8, 14);      // right arm
+        gfx.fillStyle(0x1a1a1a);
+        gfx.fillRect(10, 38, 5, 10);      // left leg
+        gfx.fillRect(17, 38, 5, 10);      // right leg
+        gfx.fillStyle(0xffffff);
+        gfx.fillCircle(13, 8, 2);         // left eye
+        gfx.fillCircle(19, 8, 2);         // right eye
+        gfx.generateTexture('player', 32, 48);
         gfx.destroy();
-
-        // Create an enemy texture
-        const gfx2 = this.make.graphics({{ add: false }});
-        gfx2.fillStyle(0x00ff00);
-        gfx2.fillCircle(16, 16, 16);
-        gfx2.generateTexture('enemy', 32, 32);
-        gfx2.destroy();
     }}
 
-    create() {{
-        // Now use the textures by their string key
-        this.player = this.physics.add.sprite(400, 300, 'player');
-        this.enemy = this.physics.add.sprite(200, 200, 'enemy');
-    }}
+PREFERRED APPROACH: Use OPTION A with assets from https://labs.phaser.io/assets/ whenever possible — these are free, reliable, and look professional. Fall back to OPTION B for custom elements.
 
-CRITICAL RULES:
-1. ALWAYS use this.make.graphics({{ add: false }}) to create textures — NEVER this.add.graphics()
-2. ALWAYS call gfx.generateTexture('keyName', width, height) with a STRING key
-3. ALWAYS call gfx.destroy() after generating the texture
-4. ALWAYS reference textures by their string key: this.physics.add.sprite(x, y, 'keyName')
-5. NEVER do sprite.setTexture(graphics.generateTexture()) — this is BROKEN
-6. NEVER use this.add.sprite() without a valid texture key — it will show a black screen
-7. Create ALL textures in preload() BEFORE using them in create()
+AVAILABLE FREE ASSETS from Phaser Labs (use these URLs directly):
+- Sprites: https://labs.phaser.io/assets/sprites/ (phaser-dude.png, star.png, bomb.png, diamond.png, mushroom.png, coin.png)
+- Backgrounds: https://labs.phaser.io/assets/skies/ (space3.png, sky1.png, underwater1.png)
+- Platforms: https://labs.phaser.io/assets/sprites/platform.png
+- Spritesheets: https://labs.phaser.io/assets/sprites/dude.png (frameWidth: 32, frameHeight: 48)
+- Particles: https://labs.phaser.io/assets/particles/ (red.png, blue.png)
 
-GAME STRUCTURE — Use exactly ONE scene with preload/create/update:
+CRITICAL TEXTURE RULES (for Option B only):
+1. ALWAYS use this.make.graphics({{ add: false }})
+2. ALWAYS call gfx.generateTexture('key', width, height) with a STRING key
+3. ALWAYS call gfx.destroy() after generating
+4. NEVER do sprite.setTexture(graphics.generateTexture()) — this is BROKEN
 
+VISUAL QUALITY REQUIREMENTS:
+- Create a visually rich game — use backgrounds, multiple layers, color gradients
+- Use multiple layered shapes to create detailed characters (head, body, limbs, eyes)
+- Add visual effects: screen shake on hits, flash on damage, tween animations on pickups
+- Smooth camera following the player if the world is larger than the screen
+- Parallax scrolling backgrounds when appropriate
+- Polished UI: styled score display, animated health bar, attractive game over screen with stats
+- Add sprite animations using this.anims.create() when using spritesheets
+
+GAME STRUCTURE:
     class GameScene extends Phaser.Scene {{
         constructor() {{ super({{ key: 'GameScene' }}); }}
-        preload() {{ /* generate ALL textures here */ }}
-        create() {{ /* set up game objects, physics, input */ }}
+        preload() {{ /* load assets or generate textures */ }}
+        create() {{ /* set up game objects, physics, input, animations */ }}
         update() {{ /* game loop logic */ }}
     }}
 
@@ -218,40 +240,35 @@ GAME STRUCTURE — Use exactly ONE scene with preload/create/update:
         type: Phaser.AUTO,
         width: 800,
         height: 600,
-        backgroundColor: '#2d2d2d',
         physics: {{
             default: 'arcade',
-            arcade: {{ gravity: {{ y: 0 }}, debug: false }}
+            arcade: {{ gravity: {{ y: 300 }}, debug: false }}
         }},
         scene: [GameScene]
     }};
 
-    const game = new Phaser.Game(config);
-
 REQUIRED FEATURES:
-- Smooth keyboard controls (arrow keys or WASD) using this.input.keyboard.createCursorKeys()
+- Smooth keyboard controls (arrow keys or WASD)
 - Arcade physics with proper collision detection
-- Score display using this.add.text() — update in the update() loop
-- Health/lives system with game over condition
-- Restart functionality (this.scene.restart())
-- All visual elements drawn with fillRect, fillCircle, fillTriangle ONLY
-- DO NOT use fillStar, fillHexagon, fillPolygon, or any non-standard Graphics methods
-- DO NOT use external images, audio, or any URLs except the Phaser CDN
-- DO NOT add music or particle emitters
+- Score display and health/lives system
+- Game over screen with restart functionality
+- At least 3 different types of game objects (player, enemies, collectibles)
+- Progressive difficulty (gets harder over time)
+- Visual feedback on all interactions (collect, damage, game over)
 
 TECHNICAL SPECS:
 - Load Phaser from: https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js
 - Canvas: 800x600 pixels
 - Include proper HTML DOCTYPE, head, body tags
-- Game must be immediately playable with ZERO JavaScript errors
-- Game must show visible sprites on screen — NO blank/black screens
+- ZERO JavaScript errors — test every function call mentally before writing it
+- Game must render visible sprites immediately — NO blank screens
 
 Return ONLY the complete HTML code. No explanations, no markdown."""
 
         # Use streaming to avoid SDK timeout on large responses
         result_text = ""
         with claude_client.messages.stream(
-            model="claude-sonnet-4-20250514",
+            model="claude-opus-4-20250514",
             max_tokens=20000,
             temperature=0.7,
             messages=[{
@@ -318,22 +335,21 @@ def update_game():
 
 Please update the game based on this feedback: {feedback}
 
-CRITICAL RULES:
+RULES:
 1. Return the COMPLETE updated HTML file — do not omit any sections
-2. All textures MUST be created in preload() using: this.make.graphics({{ add: false }}), then .generateTexture('key', w, h), then .destroy()
-3. Sprites MUST reference textures by string key: this.physics.add.sprite(x, y, 'key')
-4. NEVER do sprite.setTexture(graphics.generateTexture()) — this causes black screens
-5. Only use valid Graphics methods: fillRect, fillCircle, fillTriangle, strokeRect, strokeCircle, fillStyle, lineStyle
-6. DO NOT use fillStar, fillHexagon, fillPolygon, or any non-standard methods
-7. DO NOT add external images, audio files, or music
-8. The game MUST have zero JavaScript errors and show visible sprites
+2. Keep all existing working code — only change what the feedback asks for
+3. You may load free sprites from https://labs.phaser.io/assets/ if it improves visuals
+4. For programmatic textures: use this.make.graphics({{ add: false }}), .generateTexture('key', w, h), .destroy()
+5. NEVER do sprite.setTexture(graphics.generateTexture()) — this causes black screens
+6. Add visual polish: tweens, screen shake, color flashes for feedback
+7. ZERO JavaScript errors — the game must work immediately after update
 
 Return ONLY the complete updated HTML file. No explanations, no markdown."""
 
         # Use streaming to avoid SDK timeout on large requests
         result_text = ""
         with claude_client.messages.stream(
-            model="claude-sonnet-4-20250514",
+            model="claude-opus-4-20250514",
             max_tokens=32000,
             temperature=0.7,
             messages=[{
