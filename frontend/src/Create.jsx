@@ -18,6 +18,7 @@ export default function Create() {
   const [successMessage, setSuccessMessage] = useState("");
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editablePrompt, setEditablePrompt] = useState("");
+  const [gameEngine, setGameEngine] = useState("phaser"); // "phaser" or "threejs"
   const [isFullscreen, setIsFullscreen] = useState(false);
   const gamePreviewRef = useRef(null);
   const gameContainerRef = useRef(null);
@@ -113,7 +114,8 @@ export default function Create() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          enhanced_prompt: promptToUse
+          enhanced_prompt: promptToUse,
+          engine: gameEngine
         }),
       });
 
@@ -413,13 +415,49 @@ export default function Create() {
                   </div>
                 </div>
 
+                {/* Engine Selector */}
+                <div className="mt-6">
+                  <label className="block text-sm font-semibold text-gray-900 mb-3">
+                    Game Engine
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setGameEngine("phaser")}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        gameEngine === "phaser"
+                          ? "border-indigo-500 bg-indigo-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900">🎮 2D (PhaserJS)</div>
+                      <div className="text-xs text-gray-500 mt-1">Platformers, shooters, puzzles, arcade games</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGameEngine("threejs")}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        gameEngine === "threejs"
+                          ? "border-indigo-500 bg-indigo-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900">🚗 3D (Three.js)</div>
+                      <div className="text-xs text-gray-500 mt-1">Parking, driving, simulation, 3D environments</div>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="mt-6">
                   <label className="block text-sm font-semibold text-gray-900 mb-3">
                     Game Description
                   </label>
                   <textarea
                     className="w-full p-6 border border-gray-300 rounded-xl h-48 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200 text-gray-700"
-                    placeholder="Example: Create a space shooter game where the player controls a spaceship and fights alien enemies. The game should have power-ups, multiple levels, and a boss at the end. Use a retro pixel art style with neon colors."
+                    placeholder={gameEngine === "threejs"
+                      ? "Example: A 3D parking game where the player drives a car into a parking spot. Include obstacles, a timer, and multiple difficulty levels with tighter spaces."
+                      : "Example: Create a space shooter game where the player controls a spaceship and fights alien enemies. The game should have power-ups, multiple levels, and a boss at the end."
+                    }
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                   />

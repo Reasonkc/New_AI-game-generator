@@ -141,7 +141,8 @@ def generate_game():
             return jsonify({"error": "Missing 'enhanced_prompt' in request"}), 400
             
         enhanced_prompt = data['enhanced_prompt']
-        
+        engine = data.get('engine', 'phaser')
+
         # Handle both string and object types for enhanced_prompt
         if isinstance(enhanced_prompt, str):
             description = enhanced_prompt
@@ -262,6 +263,109 @@ TECHNICAL SPECS:
 - Include proper HTML DOCTYPE, head, body tags
 - ZERO JavaScript errors — test every function call mentally before writing it
 - Game must render visible sprites immediately — NO blank screens
+
+Return ONLY the complete HTML code. No explanations, no markdown."""
+
+        # Three.js prompt for 3D games
+        if engine == "threejs":
+            claude_prompt = f"""Create a complete, polished 3D game in a single HTML file using Three.js.
+
+GAME CONCEPT:
+Title: {title}
+Description: {description}
+Genre: {genre}
+Game Mechanics: {mechanics}
+Controls: {controls}
+Objectives: {objectives}
+
+TECHNICAL SETUP:
+- Load Three.js from CDN: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+- Full HTML file with DOCTYPE, head, body
+- Canvas fills the browser window (width: 100vw, height: 100vh)
+- Use requestAnimationFrame for the game loop
+
+3D SCENE REQUIREMENTS:
+- Create a proper Three.js scene with PerspectiveCamera and WebGLRenderer
+- Add lighting: ambient light + directional light with shadows enabled
+- Use a ground plane with a grid or textured material
+- Create 3D objects using Three.js geometries:
+    * THREE.BoxGeometry for cars, buildings, obstacles
+    * THREE.CylinderGeometry for wheels, poles
+    * THREE.PlaneGeometry for ground, walls
+    * THREE.SphereGeometry for balls, decorative elements
+- Use THREE.MeshStandardMaterial or THREE.MeshPhongMaterial for realistic shading
+- Group related meshes using THREE.Group (e.g., car body + wheels = one group)
+- Add colors and materials that look good — not just white boxes
+
+CAMERA:
+- Third-person camera following the player object
+- Smooth camera interpolation using lerp
+- Camera should orbit slightly based on movement direction
+
+CONTROLS:
+- Arrow keys or WASD for movement
+- Smooth acceleration and deceleration (not instant teleport)
+- Realistic turning/steering for vehicles
+- Event listeners for keydown/keyup to track pressed keys
+
+PHYSICS (simple custom — do NOT import external physics libraries):
+- Implement basic collision detection using bounding boxes (object.position distance checks)
+- Simple velocity and acceleration model
+- Gravity only if needed (jumping games)
+- Wall/boundary collision — prevent going through objects
+
+REQUIRED GAME ELEMENTS:
+- A player-controlled 3D object (car, character, etc.)
+- At least 5 obstacles or interactive objects in the scene
+- A scoring or objective system (park in spot, reach destination, collect items)
+- Timer or move counter
+- HUD overlay using HTML div positioned over the canvas (position: absolute)
+- Win/lose conditions
+- Restart functionality
+
+VISUAL QUALITY:
+- Ground with visible grid lines or color pattern
+- Shadows enabled (renderer.shadowMap.enabled = true)
+- Multiple colored objects — not a monochrome scene
+- Smooth 60fps rendering
+- Environment objects (trees as green cylinders+spheres, buildings as boxes)
+
+EXAMPLE CAR STRUCTURE:
+    function createCar(color) {{
+        const car = new THREE.Group();
+        // Body
+        const bodyGeo = new THREE.BoxGeometry(2, 0.5, 4);
+        const bodyMat = new THREE.MeshStandardMaterial({{ color: color }});
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.5;
+        body.castShadow = true;
+        car.add(body);
+        // Cabin
+        const cabinGeo = new THREE.BoxGeometry(1.5, 0.5, 2);
+        const cabinMat = new THREE.MeshStandardMaterial({{ color: 0x88ccff }});
+        const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+        cabin.position.set(0, 1, -0.2);
+        cabin.castShadow = true;
+        car.add(cabin);
+        // Wheels
+        const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.3, 16);
+        const wheelMat = new THREE.MeshStandardMaterial({{ color: 0x333333 }});
+        [[-1, 0.3, 1.2], [1, 0.3, 1.2], [-1, 0.3, -1.2], [1, 0.3, -1.2]].forEach(pos => {{
+            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+            wheel.rotation.z = Math.PI / 2;
+            wheel.position.set(...pos);
+            car.add(wheel);
+        }});
+        return car;
+    }}
+
+CRITICAL RULES:
+- ZERO JavaScript errors — the game MUST work on first load
+- Do NOT import modules (no import/export) — use vanilla script tags
+- Do NOT use OrbitControls or any external Three.js addons
+- All 3D objects must be visible — set proper positions, camera must see the scene
+- The renderer must be appended to document.body
+- Include window resize handler to keep aspect ratio correct
 
 Return ONLY the complete HTML code. No explanations, no markdown."""
 
