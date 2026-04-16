@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff, Maximize, Minimize } from "lucide-react";
 import ConsentModal, { hasConsent } from "./components/ConsentModal";
+import LoadingWithJokes from "./components/LoadingWithJokes";
 
 export default function Create() {
   const [prompt, setPrompt] = useState("");
@@ -506,23 +507,27 @@ export default function Create() {
                     </div>
                     <div>
                       <h2 className="text-3xl font-bold">
-                        {currentStep === 2 ? 'AI Enhancement Complete' : 'Generating Your Game'}
+                        {currentStep === 2 ? (loading ? 'AI is thinking...' : 'AI Enhancement Complete') : 'Generating Your Game'}
                       </h2>
                       <p className="text-emerald-100 mt-1">
-                        {currentStep === 2 ? 'Review and edit your enhanced game concept' : `Creating an amazing ${gameEngine === 'threejs' ? '3D Three.js' : '2D PhaserJS'} game`}
+                        {currentStep === 2 ? (loading ? 'Gemini is crafting the perfect game concept for you' : 'Review and edit your enhanced game concept') : `Creating an amazing ${gameEngine === 'threejs' ? '3D Three.js' : '2D PhaserJS'} game`}
                       </p>
                     </div>
                   </div>
-                  {currentStep === 3 && loading && (
+                  {loading && (
                     <div className="flex items-center text-white bg-white/10 px-4 py-2 rounded-xl">
                       <Loader size={20} className="mr-2 animate-spin" />
-                      <span className="font-medium">Generating game...</span>
+                      <span className="font-medium">{currentStep === 2 ? 'Enhancing prompt...' : 'Generating game...'}</span>
                     </div>
                   )}
                 </div>
               </div>
               
               <div className="p-8">
+                {currentStep === 2 && loading && !enhancedPrompt && (
+                  <LoadingWithJokes engine={gameEngine} />
+                )}
+
                 {enhancedPrompt && (
                   <div className="mb-8">
                     <div className="flex items-center justify-between mb-4">
