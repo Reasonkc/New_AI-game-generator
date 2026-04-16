@@ -21,6 +21,7 @@ export default function Create() {
   const [editablePrompt, setEditablePrompt] = useState("");
   const [gameEngine, setGameEngine] = useState("phaser"); // "phaser" or "threejs"
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [generationTime, setGenerationTime] = useState(null); // seconds it took
   const gamePreviewRef = useRef(null);
   const gameContainerRef = useRef(null);
 
@@ -109,12 +110,14 @@ export default function Create() {
   const generateGame = async (promptToUse = enhancedPrompt || prompt) => {
     setLoading(true);
     setError(null);
+    setGenerationTime(null);
+    const startTime = Date.now();
 
     try {
       const response = await fetch("http://127.0.0.1:5000/generate_game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           enhanced_prompt: promptToUse,
           engine: gameEngine
         }),
@@ -133,8 +136,11 @@ export default function Create() {
           setGameHtml(gameData.html);
         }
 
+        const elapsed = Math.round((Date.now() - startTime) / 100) / 10;
+        setGenerationTime(elapsed);
+
         setCurrentStep(4);
-        showSuccess("Game generated successfully! You can now play, download, or modify it.");
+        showSuccess(`Game generated in ${elapsed}s! You can now play, download, or modify it.`);
       }
     } catch (err) {
       setError("Network error. Please check if the backend is running.");
@@ -230,6 +236,7 @@ export default function Create() {
     setGameId("");
     setCurrentStep(1);
     setError(null);
+    setGenerationTime(null);
   };
 
 
@@ -602,38 +609,9 @@ export default function Create() {
                   </div>
                 )}
 
-                {/* Loading indicator for game generation with progress */}
+                {/* Loading indicator for game generation */}
                 {currentStep === 3 && loading && (
-                  <div className="mb-8 text-center">
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-8">
-                      <div className="flex flex-col items-center">
-                        <div className="relative mb-6">
-                          <div className="w-20 h-20 border-4 border-blue-200 rounded-full animate-pulse"></div>
-                          <div className="absolute inset-0 w-20 h-20 border-4 border-t-blue-600 rounded-full animate-spin"></div>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">Creating Your Game</h3>
-                        <p className="text-gray-600 mb-2">{`AI is generating a fully functional ${gameEngine === 'threejs' ? '3D game with lighting and physics' : '2D game with sprites and mechanics'}`}</p>
-                        <div className="w-full max-w-xs bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
-                          <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full animate-pulse" style={{width: '75%', transition: 'width 30s ease-out'}}></div>
-                        </div>
-                        <p className="text-xs text-gray-400 mb-4">Estimated time: 20–40 seconds</p>
-                        <div className="flex items-center space-x-4 text-sm text-gray-500">
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                            Powered by Claude AI
-                          </div>
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                            {gameEngine === 'threejs' ? '3D Rendering & Lighting' : '2D Physics Engine'}
-                          </div>
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
-                            {gameEngine === 'threejs' ? 'Camera & Shadows' : 'Sprite Animations'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <LoadingWithJokes engine={gameEngine} stage="generate" />
                 )}
 
                 <div className="flex justify-between items-center">
@@ -677,7 +655,14 @@ export default function Create() {
                     </div>
                     <div>
                       <h2 className="text-4xl font-bold">{title || "Your AI Game"}</h2>
-                      <p className="text-purple-100 mt-1">Game generated successfully! Ready to play</p>
+                      <p className="text-purple-100 mt-1">
+                        Game generated successfully! Ready to play
+                        {generationTime !== null && (
+                          <span className="ml-2 inline-flex items-center bg-white/20 px-2 py-0.5 rounded-full text-xs font-medium">
+                            ⏱ {generationTime}s
+                          </span>
+                        )}
+                      </p>
                     </div>
                   </div>
                   <div className="flex space-x-3">
