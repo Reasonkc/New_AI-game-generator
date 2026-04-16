@@ -209,110 +209,38 @@ def generate_game():
             controls = enhanced_prompt.get('controls', 'Arrow keys or WASD')
             objectives = enhanced_prompt.get('objectives', 'Complete the game objectives')
 
-        claude_prompt = f"""Create a complete, polished, visually impressive HTML file for a PhaserJS game.
+        claude_prompt = f"""Build a complete, polished PhaserJS game in a single HTML file.
 
-GAME CONCEPT:
-Title: {title}
-Description: {description}
-Genre: {genre}
-Game Mechanics: {mechanics}
-Visual Style: {visual_style}
-Controls: {controls}
-Objectives: {objectives}
+CONCEPT: {title} ({genre})
+{description}
+Mechanics: {mechanics}. Controls: {controls}. Objectives: {objectives}. Visuals: {visual_style}
 
-ASSET STRATEGY — You have TWO options for each sprite. Use whichever produces the best visuals:
+SETUP:
+- Load Phaser 3.80.1: https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js
+- Canvas 800x600, Phaser.AUTO, arcade physics
 
-OPTION A — Load free sprite images from the web in preload():
-    preload() {{
-        // Example: load sprites from open-source game assets
-        this.load.image('player', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
-        this.load.image('star', 'https://labs.phaser.io/assets/sprites/star.png');
-        this.load.image('bomb', 'https://labs.phaser.io/assets/sprites/bomb.png');
-        this.load.image('platform', 'https://labs.phaser.io/assets/sprites/platform.png');
-        this.load.spritesheet('dude', 'https://labs.phaser.io/assets/sprites/dude.png', {{ frameWidth: 32, frameHeight: 48 }});
-    }}
+ASSETS — Use free sprites from labs.phaser.io when possible (reliable URLs):
+- https://labs.phaser.io/assets/sprites/phaser-dude.png, star.png, bomb.png, diamond.png, coin.png, platform.png
+- https://labs.phaser.io/assets/skies/space3.png, sky1.png
+- Spritesheet: https://labs.phaser.io/assets/sprites/dude.png (frameWidth: 32, frameHeight: 48)
 
-OPTION B — Generate detailed textures programmatically:
-    preload() {{
-        const gfx = this.make.graphics({{ add: false }});
-        // Layer multiple shapes for detailed characters
-        gfx.fillStyle(0x3366ff);
-        gfx.fillCircle(16, 10, 10);       // head
-        gfx.fillStyle(0x2255cc);
-        gfx.fillRect(8, 18, 16, 20);      // body
-        gfx.fillStyle(0x3366ff);
-        gfx.fillRect(4, 22, 8, 14);       // left arm
-        gfx.fillRect(20, 22, 8, 14);      // right arm
-        gfx.fillStyle(0x1a1a1a);
-        gfx.fillRect(10, 38, 5, 10);      // left leg
-        gfx.fillRect(17, 38, 5, 10);      // right leg
-        gfx.fillStyle(0xffffff);
-        gfx.fillCircle(13, 8, 2);         // left eye
-        gfx.fillCircle(19, 8, 2);         // right eye
-        gfx.generateTexture('player', 32, 48);
-        gfx.destroy();
-    }}
+For custom textures, use this EXACT pattern:
+  const gfx = this.make.graphics({{ add: false }});
+  gfx.fillStyle(0xff0000); gfx.fillRect(0, 0, 32, 32);
+  gfx.generateTexture('player', 32, 32); gfx.destroy();
+  // Then: this.physics.add.sprite(x, y, 'player')
 
-PREFERRED APPROACH: Use OPTION A with assets from https://labs.phaser.io/assets/ whenever possible — these are free, reliable, and look professional. Fall back to OPTION B for custom elements.
+NEVER: this.add.graphics() for textures, sprite.setTexture(gfx.generateTexture()), or non-existent methods like fillStar/fillHexagon.
 
-AVAILABLE FREE ASSETS from Phaser Labs (use these URLs directly):
-- Sprites: https://labs.phaser.io/assets/sprites/ (phaser-dude.png, star.png, bomb.png, diamond.png, mushroom.png, coin.png)
-- Backgrounds: https://labs.phaser.io/assets/skies/ (space3.png, sky1.png, underwater1.png)
-- Platforms: https://labs.phaser.io/assets/sprites/platform.png
-- Spritesheets: https://labs.phaser.io/assets/sprites/dude.png (frameWidth: 32, frameHeight: 48)
-- Particles: https://labs.phaser.io/assets/particles/ (red.png, blue.png)
+REQUIRED:
+- Single GameScene (preload, create, update)
+- Smooth keyboard controls (cursors or WASD)
+- 3+ object types (player, enemies/obstacles, collectibles)
+- Score display, health/lives, game-over screen, restart
+- Progressive difficulty (spawn rate, speed increases over time)
+- Visual feedback: tween effects on collect/damage, color flashes, screen shake on hits
 
-CRITICAL TEXTURE RULES (for Option B only):
-1. ALWAYS use this.make.graphics({{ add: false }})
-2. ALWAYS call gfx.generateTexture('key', width, height) with a STRING key
-3. ALWAYS call gfx.destroy() after generating
-4. NEVER do sprite.setTexture(graphics.generateTexture()) — this is BROKEN
-
-VISUAL QUALITY REQUIREMENTS:
-- Create a visually rich game — use backgrounds, multiple layers, color gradients
-- Use multiple layered shapes to create detailed characters (head, body, limbs, eyes)
-- Add visual effects: screen shake on hits, flash on damage, tween animations on pickups
-- Smooth camera following the player if the world is larger than the screen
-- Parallax scrolling backgrounds when appropriate
-- Polished UI: styled score display, animated health bar, attractive game over screen with stats
-- Add sprite animations using this.anims.create() when using spritesheets
-
-GAME STRUCTURE:
-    class GameScene extends Phaser.Scene {{
-        constructor() {{ super({{ key: 'GameScene' }}); }}
-        preload() {{ /* load assets or generate textures */ }}
-        create() {{ /* set up game objects, physics, input, animations */ }}
-        update() {{ /* game loop logic */ }}
-    }}
-
-    const config = {{
-        type: Phaser.AUTO,
-        width: 800,
-        height: 600,
-        physics: {{
-            default: 'arcade',
-            arcade: {{ gravity: {{ y: 300 }}, debug: false }}
-        }},
-        scene: [GameScene]
-    }};
-
-REQUIRED FEATURES:
-- Smooth keyboard controls (arrow keys or WASD)
-- Arcade physics with proper collision detection
-- Score display and health/lives system
-- Game over screen with restart functionality
-- At least 3 different types of game objects (player, enemies, collectibles)
-- Progressive difficulty (gets harder over time)
-- Visual feedback on all interactions (collect, damage, game over)
-
-TECHNICAL SPECS:
-- Load Phaser from: https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js
-- Canvas: 800x600 pixels
-- Include proper HTML DOCTYPE, head, body tags
-- ZERO JavaScript errors — test every function call mentally before writing it
-- Game must render visible sprites immediately — NO blank screens
-
-Return ONLY the complete HTML code. No explanations, no markdown."""
+OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations, no markdown fences. Zero JS errors. Visible sprites on load."""
 
         # Three.js prompt for 3D games
         if engine == "threejs":
@@ -326,102 +254,47 @@ Game Mechanics: {mechanics}
 Controls: {controls}
 Objectives: {objectives}
 
-TECHNICAL SETUP:
-- Load Three.js from CDN: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
-- Full HTML file with DOCTYPE, head, body
-- Canvas fills the browser window (width: 100vw, height: 100vh)
-- Use requestAnimationFrame for the game loop
+SETUP:
+- Load Three.js r128: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+- Canvas fills window (100vw/100vh), appended to document.body
+- requestAnimationFrame game loop, window resize handler
 
-3D SCENE REQUIREMENTS:
-- Create a proper Three.js scene with PerspectiveCamera and WebGLRenderer
-- Add lighting: ambient light + directional light with shadows enabled
-- Use a ground plane with a grid or textured material
-- Create 3D objects using Three.js geometries:
-    * THREE.BoxGeometry for cars, buildings, obstacles
-    * THREE.CylinderGeometry for wheels, poles
-    * THREE.PlaneGeometry for ground, walls
-    * THREE.SphereGeometry for balls, decorative elements
-- Use THREE.MeshStandardMaterial or THREE.MeshPhongMaterial for realistic shading
-- Group related meshes using THREE.Group (e.g., car body + wheels = one group)
-- Add colors and materials that look good — not just white boxes
+SCENE:
+- PerspectiveCamera + WebGLRenderer with shadowMap.enabled = true
+- Ambient + directional light (castShadow = true)
+- Ground plane with grid/color pattern
+- Use BoxGeometry, CylinderGeometry, SphereGeometry, PlaneGeometry
+- MeshStandardMaterial with varied colors (no monochrome)
+- Group related meshes (THREE.Group for cars: body + cabin + 4 wheels)
 
-CAMERA:
-- Third-person camera following the player object
-- Smooth camera interpolation using lerp
-- Camera should orbit slightly based on movement direction
+GAMEPLAY:
+- Third-person camera following player, smooth lerp
+- Keyboard input via keydown/keyup listeners (WASD or arrows)
+- Smooth acceleration/deceleration — NOT instant teleport
+- Realistic turning for vehicles (steer angle affects heading)
+- Custom physics: bounding-box collision, velocity model, boundary checks
+- NO external physics libs, NO import/export, NO OrbitControls
 
-CONTROLS:
-- Arrow keys or WASD for movement
-- Smooth acceleration and deceleration (not instant teleport)
-- Realistic turning/steering for vehicles
-- Event listeners for keydown/keyup to track pressed keys
+REQUIRED:
+- Player-controlled 3D object
+- 5+ obstacles/interactive objects
+- HUD overlay (HTML div, position: absolute) — score, timer, objectives
+- Win/lose conditions + restart functionality
+- Environment props (trees, buildings) for visual richness
 
-PHYSICS (simple custom — do NOT import external physics libraries):
-- Implement basic collision detection using bounding boxes (object.position distance checks)
-- Simple velocity and acceleration model
-- Gravity only if needed (jumping games)
-- Wall/boundary collision — prevent going through objects
+Example car pattern:
+  const car = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.5, 4), new THREE.MeshStandardMaterial({{color: 0xff0000}}));
+  body.castShadow = true; car.add(body);
+  // ... add cabin + 4 wheels (CylinderGeometry rotated on z by PI/2)
 
-REQUIRED GAME ELEMENTS:
-- A player-controlled 3D object (car, character, etc.)
-- At least 5 obstacles or interactive objects in the scene
-- A scoring or objective system (park in spot, reach destination, collect items)
-- Timer or move counter
-- HUD overlay using HTML div positioned over the canvas (position: absolute)
-- Win/lose conditions
-- Restart functionality
-
-VISUAL QUALITY:
-- Ground with visible grid lines or color pattern
-- Shadows enabled (renderer.shadowMap.enabled = true)
-- Multiple colored objects — not a monochrome scene
-- Smooth 60fps rendering
-- Environment objects (trees as green cylinders+spheres, buildings as boxes)
-
-EXAMPLE CAR STRUCTURE:
-    function createCar(color) {{
-        const car = new THREE.Group();
-        // Body
-        const bodyGeo = new THREE.BoxGeometry(2, 0.5, 4);
-        const bodyMat = new THREE.MeshStandardMaterial({{ color: color }});
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.5;
-        body.castShadow = true;
-        car.add(body);
-        // Cabin
-        const cabinGeo = new THREE.BoxGeometry(1.5, 0.5, 2);
-        const cabinMat = new THREE.MeshStandardMaterial({{ color: 0x88ccff }});
-        const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-        cabin.position.set(0, 1, -0.2);
-        cabin.castShadow = true;
-        car.add(cabin);
-        // Wheels
-        const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.3, 16);
-        const wheelMat = new THREE.MeshStandardMaterial({{ color: 0x333333 }});
-        [[-1, 0.3, 1.2], [1, 0.3, 1.2], [-1, 0.3, -1.2], [1, 0.3, -1.2]].forEach(pos => {{
-            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-            wheel.rotation.z = Math.PI / 2;
-            wheel.position.set(...pos);
-            car.add(wheel);
-        }});
-        return car;
-    }}
-
-CRITICAL RULES:
-- ZERO JavaScript errors — the game MUST work on first load
-- Do NOT import modules (no import/export) — use vanilla script tags
-- Do NOT use OrbitControls or any external Three.js addons
-- All 3D objects must be visible — set proper positions, camera must see the scene
-- The renderer must be appended to document.body
-- Include window resize handler to keep aspect ratio correct
-
-Return ONLY the complete HTML code. No explanations, no markdown."""
+OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations, no markdown fences. Zero JS errors. Visible 3D scene on load."""
 
         # Use streaming to avoid SDK timeout on large responses
         result_text = ""
         with claude_client.messages.stream(
-            model="claude-opus-4-20250514",
-            max_tokens=20000,
+            model="claude-sonnet-4-20250514",
+            max_tokens=12000,
             temperature=0.7,
             messages=[{
                 "role": "user",
@@ -501,8 +374,8 @@ Return ONLY the complete updated HTML file. No explanations, no markdown."""
         # Use streaming to avoid SDK timeout on large requests
         result_text = ""
         with claude_client.messages.stream(
-            model="claude-opus-4-20250514",
-            max_tokens=32000,
+            model="claude-sonnet-4-20250514",
+            max_tokens=16000,
             temperature=0.7,
             messages=[{
                 "role": "user",
