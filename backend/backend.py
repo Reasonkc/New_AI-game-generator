@@ -103,39 +103,40 @@ Think in terms of 2D space: side-scrolling, top-down, or fixed-screen views.
 Suitable genres: platformers, shooters, puzzles, arcade, match-3, endless runners.
 All sprites will be created programmatically or loaded from free sprite libraries."""
 
-        query = f"""You are an expert game designer. The user has a game idea. Your job is to transform it into a detailed, well-structured game concept.
+        query = f"""You are an expert game designer. Transform the user's raw idea into a polished, implementable game concept.
 
 ENGINE CONTEXT:
 {engine_context}
 
 USER'S IDEA: {prompt}
 
-Enhance this into a polished game concept. Your response must include ALL of the following clearly labeled sections:
+IMPORTANT — Identify the actual game the user wants. If they mention a classic (Pacman, Tetris, Snake, Breakout, Space Invaders, Flappy Bird, etc.), design the concept around THAT specific game's mechanics. Don't drift into a generic shooter or platformer if the user asked for something specific.
 
-**TITLE:** A creative, catchy game title (not generic)
+Your response MUST include ALL of the following clearly labeled sections:
 
-**GENRE:** The specific game genre (e.g., "Top-down parking simulation", "Side-scrolling platformer", "Space shooter")
+**TITLE:** A creative, catchy game title (not generic like "AI Game")
 
-**DESCRIPTION:** A detailed 3-4 paragraph game description covering:
+**GENRE:** The specific game genre — be precise (e.g., "Top-down maze arcade", "Side-scrolling platformer", "Grid-based puzzle", "Space shooter with waves")
+
+**DESCRIPTION:** A 3-paragraph game description covering:
 - Core gameplay loop (what does the player do moment-to-moment?)
-- Progression system (how does difficulty increase?)
-- Win/lose conditions
-- What makes it fun and engaging
+- Progression and difficulty (how does it escalate?)
+- Win/lose conditions (how does the game end?)
 
-**GAME MECHANICS:** A bullet list of specific mechanics:
-- Player movement and controls
-- Enemy/obstacle behavior
-- Scoring system
-- Power-ups or special abilities
+**GAME MECHANICS:** Specific mechanics for THIS genre:
+- Exact player movement (grid-based? free? physics-based?)
+- Enemy/obstacle behavior (patrol? chase? random? AI pattern?)
+- Scoring system (points per action)
+- Power-ups or special abilities (if any)
 - Collision and interaction rules
 
-**VISUAL STYLE:** Describe the visual aesthetic (colors, mood, perspective)
+**VISUAL STYLE:** Visual aesthetic (colors, mood, perspective — top-down, side-scrolling, etc.)
 
-**CONTROLS:** Exact control scheme (which keys do what)
+**CONTROLS:** Exact control scheme (arrow keys for movement, spacebar for action, etc.)
 
-**OBJECTIVES:** Clear primary and secondary objectives
+**OBJECTIVES:** Primary objective and secondary objectives
 
-Do NOT include music or sound design. Focus on gameplay and visuals only."""
+Keep it concrete and implementable. No music, no sound design."""
 
         client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -209,38 +210,57 @@ def generate_game():
             controls = enhanced_prompt.get('controls', 'Arrow keys or WASD')
             objectives = enhanced_prompt.get('objectives', 'Complete the game objectives')
 
-        claude_prompt = f"""Build a complete, polished PhaserJS game in a single HTML file.
+        claude_prompt = f"""Build a complete, polished, PLAYABLE PhaserJS game in a single HTML file.
 
 CONCEPT: {title} ({genre})
 {description}
-Mechanics: {mechanics}. Controls: {controls}. Objectives: {objectives}. Visuals: {visual_style}
+Mechanics: {mechanics}
+Controls: {controls}
+Objectives: {objectives}
+Visual Style: {visual_style}
+
+Before writing code, think carefully about what makes THIS specific game genre fun:
+- If it's a maze/arcade game (Pacman-style): grid-based movement, wall collision, dots to collect, enemies with simple AI patrol or chase logic, win condition when all dots collected
+- If it's a platformer: gravity, jumping, platforms to land on, enemies that walk and can be defeated, collectibles, exit/flag
+- If it's a shooter: projectile spawning + group, enemy waves, health system, power-ups, game over on death
+- If it's a puzzle: turn-based logic, click/drag interactions, level progression, move counter
+- If it's an endless runner: auto-scrolling world, jump/duck mechanics, obstacles, increasing speed
+
+Match the mechanics to the genre — do NOT generate a generic shooter if the user asked for a maze game.
 
 SETUP:
 - Load Phaser 3.80.1: https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js
-- Canvas 800x600, Phaser.AUTO, arcade physics
+- Canvas 800x600, Phaser.AUTO, arcade physics (gravity set appropriately for the genre)
 
-ASSETS — Use free sprites from labs.phaser.io when possible (reliable URLs):
-- https://labs.phaser.io/assets/sprites/phaser-dude.png, star.png, bomb.png, diamond.png, coin.png, platform.png
-- https://labs.phaser.io/assets/skies/space3.png, sky1.png
-- Spritesheet: https://labs.phaser.io/assets/sprites/dude.png (frameWidth: 32, frameHeight: 48)
-
-For custom textures, use this EXACT pattern:
+TEXTURE RULES (critical — get this wrong and the game is broken):
+For custom sprites, use this EXACT pattern in preload():
   const gfx = this.make.graphics({{ add: false }});
-  gfx.fillStyle(0xff0000); gfx.fillRect(0, 0, 32, 32);
+  gfx.fillStyle(0xffff00); gfx.fillCircle(16, 16, 14);
   gfx.generateTexture('player', 32, 32); gfx.destroy();
-  // Then: this.physics.add.sprite(x, y, 'player')
+Then use by string key: this.player = this.physics.add.sprite(x, y, 'player');
 
-NEVER: this.add.graphics() for textures, sprite.setTexture(gfx.generateTexture()), or non-existent methods like fillStar/fillHexagon.
+NEVER: this.add.graphics() for textures. NEVER: sprite.setTexture(gfx.generateTexture()). NEVER: fillStar, fillHexagon, fillPolygon.
 
-REQUIRED:
-- Single GameScene (preload, create, update)
-- Smooth keyboard controls (cursors or WASD)
-- 3+ object types (player, enemies/obstacles, collectibles)
-- Score display, health/lives, game-over screen, restart
-- Progressive difficulty (spawn rate, speed increases over time)
-- Visual feedback: tween effects on collect/damage, color flashes, screen shake on hits
+You may also load free sprites from labs.phaser.io (phaser-dude.png, star.png, bomb.png, diamond.png, coin.png, platform.png) or backgrounds from labs.phaser.io/assets/skies/.
 
-OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations, no markdown fences. Zero JS errors. Visible sprites on load."""
+REQUIRED FEATURES:
+- Single GameScene class with preload(), create(), and update() methods
+- Responsive keyboard input (this.cursors = this.input.keyboard.createCursorKeys())
+- A functional game loop matching the genre (not just random sprites floating around)
+- Win/lose conditions with clear end states
+- Score display (this.add.text()) updated in the update() loop
+- Game over screen with restart capability (this.scene.restart() or keyboard press to restart)
+- At least 3 distinct object types that interact (player, enemies/hazards, collectibles/goals)
+- Collision detection between appropriate pairs (this.physics.add.collider and overlap)
+- Visual feedback on interactions (tweens on collect, color flashes on damage)
+
+Double-check before outputting:
+1. Does the game mechanic match what the user asked for?
+2. Will it show visible sprites on load (not a black screen)?
+3. Are there any undefined functions or missing texture keys?
+4. Is there a clear way to win AND a clear way to lose?
+
+OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations. No markdown fences. Zero JavaScript errors."""
 
         # Three.js prompt for 3D games
         if engine == "threejs":
@@ -294,8 +314,8 @@ OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations, no markdown
         result_text = ""
         with claude_client.messages.stream(
             model="claude-sonnet-4-20250514",
-            max_tokens=12000,
-            temperature=0.7,
+            max_tokens=16000,
+            temperature=0.6,
             messages=[{
                 "role": "user",
                 "content": claude_prompt
