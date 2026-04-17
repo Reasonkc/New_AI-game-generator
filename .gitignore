@@ -43,6 +43,9 @@ yarn-error.log*
 *.swo
 *~
 
+# Claude Code
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -59,6 +62,12 @@ backend/games/*/
 # Test/temp files
 backend/Gamefiles/
 backend/*.html
+!backend/seed_example.html
 backend/*.png
 backend/screenshots/
 backend/temp.py
+
+# Local-only notes (do not commit)
+presentation_script.md
+REFACTOR_PR.md
+backend/logs/

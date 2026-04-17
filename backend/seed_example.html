@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pong</title>
+<style>
+  body { margin: 0; background: #0a0a14; color: #e6e6f0; font-family: system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 24px; }
+  h1 { margin: 0 0 16px; font-size: 28px; letter-spacing: 2px; }
+  canvas { background: #101020; border: 2px solid #4a4a8a; box-shadow: 0 0 30px #22224466; }
+  .controls { margin-top: 16px; font-size: 14px; opacity: 0.85; max-width: 800px; text-align: center; line-height: 1.7; }
+  kbd { background: #22223a; border: 1px solid #4a4a8a; border-radius: 4px; padding: 2px 6px; font-family: monospace; }
+</style>
+</head>
+<body>
+<h1>PONG</h1>
+<canvas id="game" width="800" height="600"></canvas>
+<div class="controls">
+  <kbd>W</kbd>/<kbd>S</kbd> or <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> move &middot;
+  <kbd>Space</kbd>/<kbd>P</kbd> pause &middot;
+  <kbd>R</kbd> restart &middot;
+  <kbd>Enter</kbd> start
+</div>
+<script>
+(function () {
+  const CONFIG = {
+    WIDTH: 800, HEIGHT: 600,
+    PADDLE_W: 12, PADDLE_H: 90, PADDLE_SPEED: 420,
+    BALL_SIZE: 12, BALL_SPEED_START: 320, BALL_SPEED_GROWTH: 18,
+    AI_REACT: 320, WIN_SCORE: 7,
+    BG: '#101020', FG: '#e6e6f0', NET: '#33335a', ERROR: '#ff6464',
+    FIXED_DT: 1 / 60, MAX_ACC: 0.25
+  };
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  const keys = {};
+  let state = 'menu';
+  let paused = false;
+  let fatalError = null;
+  let player, ai, ball, scorePlayer, scoreAI;
+
+  function resetGame() {
+    player = { x: 24, y: CONFIG.HEIGHT / 2 - CONFIG.PADDLE_H / 2 };
+    ai = { x: CONFIG.WIDTH - 24 - CONFIG.PADDLE_W, y: CONFIG.HEIGHT / 2 - CONFIG.PADDLE_H / 2 };
+    scorePlayer = 0; scoreAI = 0;
+    resetBall(Math.random() < 0.5 ? -1 : 1);
+    paused = false; fatalError = null;
+  }
+
+  function resetBall(dir) {
+    const angle = (Math.random() - 0.5) * 0.6;
+    const speed = CONFIG.BALL_SPEED_START;
+    ball = { x: CONFIG.WIDTH / 2, y: CONFIG.HEIGHT / 2,
+             vx: Math.cos(angle) * speed * dir, vy: Math.sin(angle) * speed,
+             size: CONFIG.BALL_SIZE, speed: speed };
+  }
+
+  const USED = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyS','KeyP','KeyR','Enter']);
+  window.addEventListener('keydown', function (e) {
+    if (USED.has(e.code)) e.preventDefault();
+    keys[e.code] = true;
+    if (e.code === 'KeyR') { resetGame(); state = 'playing'; }
+    else if (e.code === 'KeyP' || e.code === 'Space') {
+      if (state === 'playing') paused = !paused;
+      else { resetGame(); state = 'playing'; }
+    } else if (e.code === 'Enter') {
+      if (state !== 'playing') { resetGame(); state = 'playing'; }
+    }
+  });
+  window.addEventListener('keyup', function (e) { keys[e.code] = false; });
+  window.addEventListener('blur', function () { if (state === 'playing') paused = true; });
+
+  // NOTE: AABB collision between ball (treated as square of BALL_SIZE) and paddles.
+  function aabb(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function update(dt) {
+    const up = keys['ArrowUp'] || keys['KeyW'];
+    const down = keys['ArrowDown'] || keys['KeyS'];
+    if (up) player.y -= CONFIG.PADDLE_SPEED * dt;
+    if (down) player.y += CONFIG.PADDLE_SPEED * dt;
+    player.y = Math.max(0, Math.min(CONFIG.HEIGHT - CONFIG.PADDLE_H, player.y));
+
+    const target = ball.y - CONFIG.PADDLE_H / 2;
+    const diff = target - ai.y;
+    const step = Math.max(-CONFIG.AI_REACT * dt, Math.min(CONFIG.AI_REACT * dt, diff));
+    ai.y += step;
+    ai.y = Math.max(0, Math.min(CONFIG.HEIGHT - CONFIG.PADDLE_H, ai.y));
+
+    ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+    if (ball.y < 0) { ball.y = 0; ball.vy = Math.abs(ball.vy); }
+    else if (ball.y + ball.size > CONFIG.HEIGHT) { ball.y = CONFIG.HEIGHT - ball.size; ball.vy = -Math.abs(ball.vy); }
+
+    const bBox = { x: ball.x, y: ball.y, w: ball.size, h: ball.size };
+    const pBox = { x: player.x, y: player.y, w: CONFIG.PADDLE_W, h: CONFIG.PADDLE_H };
+    const aBox = { x: ai.x, y: ai.y, w: CONFIG.PADDLE_W, h: CONFIG.PADDLE_H };
+
+    if (aabb(bBox, pBox) && ball.vx < 0) {
+      ball.x = pBox.x + pBox.w;
+      const rel = (ball.y + ball.size / 2 - (player.y + CONFIG.PADDLE_H / 2)) / (CONFIG.PADDLE_H / 2);
+      bounce(rel, 1);
+    } else if (aabb(bBox, aBox) && ball.vx > 0) {
+      ball.x = aBox.x - ball.size;
+      const rel = (ball.y + ball.size / 2 - (ai.y + CONFIG.PADDLE_H / 2)) / (CONFIG.PADDLE_H / 2);
+      bounce(rel, -1);
+    }
+
+    if (ball.x + ball.size < 0) { scoreAI++; afterScore(1); }
+    else if (ball.x > CONFIG.WIDTH) { scorePlayer++; afterScore(-1); }
+    if (scorePlayer >= CONFIG.WIN_SCORE || scoreAI >= CONFIG.WIN_SCORE) state = 'gameover';
+  }
+
+  function bounce(rel, dir) {
+    ball.speed += CONFIG.BALL_SPEED_GROWTH;
+    const angle = rel * 0.9;
+    ball.vx = Math.cos(angle) * ball.speed * dir;
+    ball.vy = Math.sin(angle) * ball.speed;
+  }
+  function afterScore(dir) {
+    if (scorePlayer < CONFIG.WIN_SCORE && scoreAI < CONFIG.WIN_SCORE) resetBall(dir);
+  }
+
+  function drawBg() {
+    ctx.fillStyle = CONFIG.BG; ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+    ctx.fillStyle = CONFIG.NET;
+    for (let y = 0; y < CONFIG.HEIGHT; y += 24) ctx.fillRect(CONFIG.WIDTH / 2 - 2, y, 4, 14);
+  }
+  function drawHUD() {
+    ctx.fillStyle = CONFIG.FG;
+    ctx.textAlign = 'center'; ctx.font = 'bold 48px system-ui, sans-serif';
+    ctx.fillText(String(scorePlayer), CONFIG.WIDTH * 0.25, 60);
+    ctx.fillText(String(scoreAI), CONFIG.WIDTH * 0.75, 60);
+    ctx.textAlign = 'left'; ctx.font = '14px system-ui, sans-serif';
+    ctx.fillText('First to ' + CONFIG.WIN_SCORE, 12, 20);
+    if (paused) {
+      ctx.textAlign = 'center'; ctx.font = 'bold 42px system-ui, sans-serif';
+      ctx.fillText('PAUSED', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2);
+      ctx.font = '16px system-ui, sans-serif';
+      ctx.fillText('Press P or Space to resume', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 36);
+    }
+  }
+  function drawPlaying() {
+    drawBg();
+    ctx.fillStyle = CONFIG.FG;
+    ctx.fillRect(player.x, player.y, CONFIG.PADDLE_W, CONFIG.PADDLE_H);
+    ctx.fillRect(ai.x, ai.y, CONFIG.PADDLE_W, CONFIG.PADDLE_H);
+    ctx.fillRect(ball.x, ball.y, ball.size, ball.size);
+    drawHUD();
+  }
+  function drawMenu() {
+    drawBg();
+    ctx.fillStyle = CONFIG.FG; ctx.textAlign = 'center';
+    ctx.font = 'bold 64px system-ui, sans-serif';
+    ctx.fillText('PONG', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 - 40);
+    ctx.font = '18px system-ui, sans-serif';
+    ctx.fillText('Press Enter or Space to start', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 10);
+    ctx.fillText('W/S or Arrows to move  |  R to restart', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 40);
+  }
+  function drawGameOver() {
+    drawPlaying();
+    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+    ctx.fillStyle = CONFIG.FG; ctx.textAlign = 'center';
+    ctx.font = 'bold 56px system-ui, sans-serif';
+    ctx.fillText(scorePlayer > scoreAI ? 'YOU WIN' : 'YOU LOSE', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 - 30);
+    ctx.font = '20px system-ui, sans-serif';
+    ctx.fillText('Final: ' + scorePlayer + ' - ' + scoreAI, CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 10);
+    ctx.fillText('Press R or Space to play again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 44);
+  }
+  function drawError() {
+    ctx.fillStyle = CONFIG.BG; ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+    ctx.fillStyle = CONFIG.ERROR; ctx.textAlign = 'center';
+    ctx.font = 'bold 24px system-ui, sans-serif';
+    ctx.fillText('ERROR', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 - 10);
+    ctx.font = '14px monospace';
+    ctx.fillText(String(fatalError).slice(0, 80), CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 20);
+  }
+
+  let lastTime = performance.now();
+  let acc = 0;
+  function frame(now) {
+    try {
+      if (fatalError) { drawError(); requestAnimationFrame(frame); return; }
+      let delta = (now - lastTime) / 1000;
+      lastTime = now;
+      if (delta > CONFIG.MAX_ACC) delta = CONFIG.MAX_ACC;
+      acc += delta;
+      if (state === 'playing' && !paused) {
+        while (acc >= CONFIG.FIXED_DT) { update(CONFIG.FIXED_DT); acc -= CONFIG.FIXED_DT; }
+      } else { acc = 0; }
+      if (state === 'menu') drawMenu();
+      else if (state === 'playing') drawPlaying();
+      else drawGameOver();
+    } catch (err) {
+      console.error('Game loop error:', err);
+      fatalError = (err && err.message) ? err.message : String(err);
+      drawError();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  resetGame();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

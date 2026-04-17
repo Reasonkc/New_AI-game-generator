@@ -1,104 +1,99 @@
-from google import genai
-import json
+"""Flask HTTP layer — thin route handlers that wire the modules together.
+
+Business logic lives in dedicated modules:
+    config.py     — env vars, GENERATION_CONFIG, API clients
+    prompts.py    — system prompts (2D + 3D) with seed example
+    validation.py — pure validators (sanitize_game_id, validate_game_html, ...)
+    llm.py        — Claude two-pass generation + retry
+    storage.py    — games/ filesystem operations
+    logs_util.py  — append-only JSONL writer
+
+This file parses requests, delegates to the helpers, and formats responses.
+"""
+import os
+import time
+from datetime import datetime, timezone
+
+
+def _utc_now_iso() -> str:
+    """Timezone-aware UTC timestamp in ISO-8601 with a trailing 'Z'."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
 import flask
 from flask import request, jsonify, send_file
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import anthropic
-import os
-import uuid
-from datetime import datetime
-import re
-from dotenv import load_dotenv
-load_dotenv()
-# client = genai.Client()
+from google import genai
 
 
+GEMINI_MODELS = ("gemini-2.5-flash", "gemini-2.5-pro")
+GEMINI_RETRIES_PER_MODEL = 3
+GEMINI_BACKOFF_BASE_S = 0.8
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+
+def _call_gemini_with_fallback(query: str) -> str:
+    """Call Gemini with retry+backoff on 503, falling back to the next model."""
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    last_err: Exception | None = None
+    for model in GEMINI_MODELS:
+        for attempt in range(GEMINI_RETRIES_PER_MODEL):
+            try:
+                return client.models.generate_content(model=model, contents=query).text
+            except Exception as e:
+                msg = str(e)
+                transient = "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg.lower()
+                last_err = e
+                if not transient:
+                    raise
+                if attempt < GEMINI_RETRIES_PER_MODEL - 1:
+                    time.sleep(GEMINI_BACKOFF_BASE_S * (2 ** attempt))
+    assert last_err is not None
+    raise last_err
+
+from config import (
+    GEMINI_API_KEY,
+    GENERATIONS_LOG,
+    BUG_REPORTS_LOG,
+    claude_client,
+)
+from prompts import GAME_SYSTEM_PROMPT_2D, GAME_SYSTEM_PROMPT_3D
+from validation import (
+    sanitize_game_id,
+    extract_html_from_response,
+    detect_genre,
+    validate_game_html,
+)
+from llm import _stream_claude, generate_game_with_retry
+from storage import (
+    save_new_game,
+    save_generation_log,
+    game_html_path,
+    load_game_html,
+    load_metadata,
+    overwrite_game_html,
+    list_all_games,
+    archive_current_version,
+    game_exists,
+)
+from logs_util import append_jsonl
+
+
 app = flask.Flask(__name__)
 CORS(app)
 
-# Initialize rate limiter to prevent API abuse and control costs
-# Limits: enhance_prompt (10/hr), generate_game (5/hr), update_game (5/hr)
-# Tracks by IP address; resets on server restart (in-memory storage)
-limiter =Limiter(
+limiter = Limiter(
     app=app,
-    key_func = get_remote_address,
+    key_func=get_remote_address,
     default_limits=["150 per day", "35 per hour"],
-    storage_uri="memory://"
+    storage_uri="memory://",
 )
 
-if not GEMINI_API_KEY or not CLAUDE_API_KEY:
-    raise ValueError("API keys must be set as environment variables")
-
-
-claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
-
-# Create games directory if it doesn't exist
-GAMES_DIR = "games"
-if not os.path.exists(GAMES_DIR):
-    os.makedirs(GAMES_DIR)
-
-def sanitize_game_id(game_id):
-    """Validate game_id to prevent path traversal attacks"""
-    if not re.match(r'^[a-f0-9-]{36}$', game_id):
-        raise ValueError("Invalid game ID format")
-    return game_id
-
-def extract_html_from_response(text: str) -> str:
-    """Extract HTML code from Claude's response, removing markdown code blocks.
-
-    Takes raw text from the Claude API (which may be wrapped in markdown
-    code fences) and returns clean HTML ready to be saved or served.
-
-    Args:
-        text: Raw response text from Claude API.
-
-    Returns:
-        Cleaned HTML string.
-
-    Raises:
-        ValueError: If the input is empty or not a string.
-    """
-    if not isinstance(text, str) or not text.strip():
-        raise ValueError("Response text must be a non-empty string")
-
-    original_length = len(text)
-
-    # Strip markdown code fences in one pass: ```html ... ``` or ``` ... ```
-    cleaned_text = re.sub(
-        r'```(?:html)?\s*\n?(.*?)\n?```',
-        r'\1',
-        text,
-        flags=re.DOTALL
-    ).strip()
-
-    # If regex didn't match any fences, fall back to the original text stripped
-    if cleaned_text == text.strip():
-        cleaned_text = text.strip()
-
-    app.logger.info(f"Original response length: {original_length}")
-    app.logger.info(f"Cleaned HTML length: {len(cleaned_text)}")
-
-    # Validate that the result looks like HTML
-    if not cleaned_text.lower().startswith('<!doctype') and '<html' not in cleaned_text.lower():
-        app.logger.warning("Response does not appear to contain valid HTML")
-
-    if not cleaned_text.lower().endswith('</html>'):
-        app.logger.warning("HTML response appears to be truncated - missing closing </html> tag")
-
-    if cleaned_text.endswith('...'):
-        app.logger.warning("Response appears to be truncated (ends with ...)")
-
-    return cleaned_text
 
 @app.route('/enhance_prompt', methods=['POST'])
 @limiter.limit("10 per hour")
 def enhance_prompt():
-    """Use Gemini to refine and enhance the user's game prompt"""
+    """Refine the user's game idea into a structured concept via Gemini."""
     try:
         data = request.get_json()
         if not data or 'prompt' not in data:
@@ -106,20 +101,23 @@ def enhance_prompt():
 
         prompt = data['prompt']
         engine = data.get('engine', 'phaser')
-
         if not prompt or len(prompt.strip()) == 0:
             return jsonify({"error": "Prompt cannot be empty"}), 400
 
         if engine == "threejs":
-            engine_context = """The game will be built as a 3D browser game using Three.js.
-Think in terms of 3D space: camera angles, lighting, 3D models made from basic geometries (boxes, cylinders, spheres).
-Suitable genres: driving, parking, simulation, racing, flight, 3D exploration, tower defense with 3D view.
-Controls should consider 3D movement (forward/backward, turning, camera rotation)."""
+            engine_context = (
+                "The game will be built as a 3D browser game using Three.js.\n"
+                "Think in terms of 3D space: camera angles, lighting, 3D models made from basic geometries (boxes, cylinders, spheres).\n"
+                "Suitable genres: driving, parking, simulation, racing, flight, 3D exploration, tower defense with 3D view.\n"
+                "Controls should consider 3D movement (forward/backward, turning, camera rotation)."
+            )
         else:
-            engine_context = """The game will be built as a 2D browser game using PhaserJS.
-Think in terms of 2D space: side-scrolling, top-down, or fixed-screen views.
-Suitable genres: platformers, shooters, puzzles, arcade, match-3, endless runners.
-All sprites will be created programmatically or loaded from free sprite libraries."""
+            engine_context = (
+                "The game will be built as a 2D browser game using PhaserJS.\n"
+                "Think in terms of 2D space: side-scrolling, top-down, or fixed-screen views.\n"
+                "Suitable genres: platformers, shooters, puzzles, arcade, match-3, endless runners.\n"
+                "All sprites will be created programmatically or loaded from free sprite libraries."
+            )
 
         query = f"""You are an expert game designer. Transform the user's raw idea into a polished, implementable game concept.
 
@@ -156,32 +154,25 @@ Your response MUST include ALL of the following clearly labeled sections:
 
 Keep it concrete and implementable. No music, no sound design."""
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        response_text = _call_gemini_with_fallback(query)
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash", contents=query
-        )
-
-        response_text = response.text
-
-        # Extract title from response if present
         title = "AI Generated Game"
         genre = "Action"
         visual_style = "Detailed and polished"
         controls = "Arrow keys or WASD"
         objectives = "Complete the game objectives"
-
         for line in response_text.split('\n'):
             line_clean = line.strip().replace('**', '')
-            if line_clean.upper().startswith('TITLE:'):
+            upper = line_clean.upper()
+            if upper.startswith('TITLE:'):
                 title = line_clean.split(':', 1)[1].strip()
-            elif line_clean.upper().startswith('GENRE:'):
+            elif upper.startswith('GENRE:'):
                 genre = line_clean.split(':', 1)[1].strip()
-            elif line_clean.upper().startswith('VISUAL STYLE:'):
+            elif upper.startswith('VISUAL STYLE:'):
                 visual_style = line_clean.split(':', 1)[1].strip()
-            elif line_clean.upper().startswith('CONTROLS:'):
+            elif upper.startswith('CONTROLS:'):
                 controls = line_clean.split(':', 1)[1].strip()
-            elif line_clean.upper().startswith('OBJECTIVES:'):
+            elif upper.startswith('OBJECTIVES:'):
                 objectives = line_clean.split(':', 1)[1].strip()
 
         return jsonify({
@@ -191,207 +182,137 @@ Keep it concrete and implementable. No music, no sound design."""
             "game_mechanics": ["movement", "collision", "scoring"],
             "visual_style": visual_style,
             "controls": controls,
-            "objectives": objectives
+            "objectives": objectives,
         })
 
     except Exception as e:
         app.logger.error(f"Error in enhance_prompt: {str(e)}")
+        msg = str(e)
+        if "503" in msg or "UNAVAILABLE" in msg:
+            return jsonify({"error": "Prompt service is temporarily overloaded. Please try again in a moment."}), 503
         return jsonify({"error": "Failed to enhance prompt"}), 500
+
 
 @app.route('/generate_game', methods=['POST'])
 @limiter.limit("5 per hour")
 def generate_game():
-    """Use Claude to generate PhaserJS game code based on enhanced prompt"""
+    """Generate a playable HTML game via two-pass LLM + validate + retry pipeline."""
+    start_ts = time.time()
     try:
         data = request.get_json()
         if not data or 'enhanced_prompt' not in data:
             return jsonify({"error": "Missing 'enhanced_prompt' in request"}), 400
-            
+
         enhanced_prompt = data['enhanced_prompt']
         engine = data.get('engine', 'phaser')
 
-        # Handle both string and object types for enhanced_prompt
         if isinstance(enhanced_prompt, str):
             description = enhanced_prompt
             title = "AI Generated Game"
-            genre = "Action"
+            genre_label = "Action"
             mechanics = "movement, collision detection"
             visual_style = "Simple geometric shapes"
             controls = "Arrow keys or WASD"
             objectives = "Complete the game objectives"
+            raw_request_text = enhanced_prompt
         else:
             description = enhanced_prompt.get('description', '')
             title = enhanced_prompt.get('title', 'AI Generated Game')
-            genre = enhanced_prompt.get('genre', 'Action')
+            genre_label = enhanced_prompt.get('genre', 'Action')
             mechanics = ', '.join(enhanced_prompt.get('game_mechanics', ['movement', 'collision detection']))
             visual_style = enhanced_prompt.get('visual_style', 'Simple geometric shapes')
             controls = enhanced_prompt.get('controls', 'Arrow keys or WASD')
             objectives = enhanced_prompt.get('objectives', 'Complete the game objectives')
+            raw_request_text = f"{title} {genre_label} {description}"
 
-        claude_prompt = f"""Build a complete, polished, PLAYABLE PhaserJS game in a single HTML file.
+        detected_genre = detect_genre(raw_request_text)
+        user_prompt_text = (
+            f"CONCEPT: {title} ({genre_label})\n"
+            f"{description}\n"
+            f"Mechanics: {mechanics}\n"
+            f"Controls: {controls}\n"
+            f"Objectives: {objectives}\n"
+            f"Visual Style: {visual_style}"
+        )
 
-CONCEPT: {title} ({genre})
-{description}
-Mechanics: {mechanics}
-Controls: {controls}
-Objectives: {objectives}
-Visual Style: {visual_style}
+        game_html, attempts, warnings, total_usage = generate_game_with_retry(
+            client=claude_client,
+            user_prompt_text=user_prompt_text,
+            engine_key=engine,
+            genre=detected_genre,
+        )
 
-Before writing code, think carefully about what makes THIS specific game genre fun:
-- If it's a maze/arcade game (Pacman-style): grid-based movement, wall collision, dots to collect, enemies with simple AI patrol or chase logic, win condition when all dots collected
-- If it's a platformer: gravity, jumping, platforms to land on, enemies that walk and can be defeated, collectibles, exit/flag
-- If it's a shooter: projectile spawning + group, enemy waves, health system, power-ups, game over on death
-- If it's a puzzle: turn-based logic, click/drag interactions, level progression, move counter
-- If it's an endless runner: auto-scrolling world, jump/duck mechanics, obstacles, increasing speed
+        if not game_html:
+            append_jsonl(GENERATIONS_LOG, {
+                "timestamp": _utc_now_iso(),
+                "user_request": raw_request_text[:500],
+                "engine": engine,
+                "detected_genre": detected_genre,
+                "attempts": attempts,
+                "success": False,
+                "warnings": warnings or ["no html produced"],
+                "total_usage": total_usage,
+                "latency_s": round(time.time() - start_ts, 2),
+            })
+            return jsonify({"error": "Failed to generate game"}), 500
 
-Match the mechanics to the genre — do NOT generate a generic shooter if the user asked for a maze game.
-
-SETUP:
-- Load Phaser 3.80.1: https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js
-- Canvas 800x600, Phaser.AUTO, arcade physics (gravity set appropriately for the genre)
-
-TEXTURE RULES (critical — get this wrong and the game is broken):
-For custom sprites, use this EXACT pattern in preload():
-  const gfx = this.make.graphics({{ add: false }});
-  gfx.fillStyle(0xffff00); gfx.fillCircle(16, 16, 14);
-  gfx.generateTexture('player', 32, 32); gfx.destroy();
-Then use by string key: this.player = this.physics.add.sprite(x, y, 'player');
-
-NEVER: this.add.graphics() for textures. NEVER: sprite.setTexture(gfx.generateTexture()). NEVER: fillStar, fillHexagon, fillPolygon.
-
-You may also load free sprites from labs.phaser.io (phaser-dude.png, star.png, bomb.png, diamond.png, coin.png, platform.png) or backgrounds from labs.phaser.io/assets/skies/.
-
-REQUIRED FEATURES:
-- Single GameScene class with preload(), create(), and update() methods
-- Responsive keyboard input (this.cursors = this.input.keyboard.createCursorKeys())
-- A functional game loop matching the genre (not just random sprites floating around)
-- Win/lose conditions with clear end states
-- Score display (this.add.text()) updated in the update() loop
-- Game over screen with restart capability (this.scene.restart() or keyboard press to restart)
-- At least 3 distinct object types that interact (player, enemies/hazards, collectibles/goals)
-- Collision detection between appropriate pairs (this.physics.add.collider and overlap)
-- Visual feedback on interactions (tweens on collect, color flashes on damage)
-
-Double-check before outputting:
-1. Does the game mechanic match what the user asked for?
-2. Will it show visible sprites on load (not a black screen)?
-3. Are there any undefined functions or missing texture keys?
-4. Is there a clear way to win AND a clear way to lose?
-
-OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations. No markdown fences. Zero JavaScript errors."""
-
-        # Three.js prompt for 3D games
-        if engine == "threejs":
-            claude_prompt = f"""Create a complete, polished 3D game in a single HTML file using Three.js.
-
-GAME CONCEPT:
-Title: {title}
-Description: {description}
-Genre: {genre}
-Game Mechanics: {mechanics}
-Controls: {controls}
-Objectives: {objectives}
-
-SETUP:
-- Load Three.js r128: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
-- Canvas fills window (100vw/100vh), appended to document.body
-- requestAnimationFrame game loop, window resize handler
-
-SCENE:
-- PerspectiveCamera + WebGLRenderer with shadowMap.enabled = true
-- Ambient + directional light (castShadow = true)
-- Ground plane with grid/color pattern
-- Use BoxGeometry, CylinderGeometry, SphereGeometry, PlaneGeometry
-- MeshStandardMaterial with varied colors (no monochrome)
-- Group related meshes (THREE.Group for cars: body + cabin + 4 wheels)
-
-GAMEPLAY:
-- Third-person camera following player, smooth lerp
-- Keyboard input via keydown/keyup listeners (WASD or arrows)
-- Smooth acceleration/deceleration — NOT instant teleport
-- Realistic turning for vehicles (steer angle affects heading)
-- Custom physics: bounding-box collision, velocity model, boundary checks
-- NO external physics libs, NO import/export, NO OrbitControls
-
-REQUIRED:
-- Player-controlled 3D object
-- 5+ obstacles/interactive objects
-- HUD overlay (HTML div, position: absolute) — score, timer, objectives
-- Win/lose conditions + restart functionality
-- Environment props (trees, buildings) for visual richness
-
-Example car pattern:
-  const car = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.5, 4), new THREE.MeshStandardMaterial({{color: 0xff0000}}));
-  body.castShadow = true; car.add(body);
-  // ... add cabin + 4 wheels (CylinderGeometry rotated on z by PI/2)
-
-OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations, no markdown fences. Zero JS errors. Visible 3D scene on load."""
-
-        # Use streaming to avoid SDK timeout on large responses
-        result_text = ""
-        with claude_client.messages.stream(
-            model="claude-sonnet-4-20250514",
-            max_tokens=16000,
-            temperature=0.6,
-            messages=[{
-                "role": "user",
-                "content": claude_prompt
-            }]
-        ) as stream:
-            for text in stream.text_stream:
-                result_text += text
-
-        game_html = extract_html_from_response(result_text)
-        
-        # Generate unique game ID and save the game
-        game_id = str(uuid.uuid4())
-        game_folder = os.path.join(GAMES_DIR, game_id)
-        os.makedirs(game_folder, exist_ok=True)
-        
-        # Save the HTML file
-        game_path = os.path.join(game_folder, "index.html")
-        with open(game_path, "w", encoding="utf-8") as file:
-            file.write(game_html)
-        
-        # Save metadata using local variables extracted from the if/else block
-        metadata = {
-            "id": game_id,
+        game_id, _ = save_new_game(game_html, {
             "title": title,
             "description": description,
-            "created_at": datetime.now().isoformat(),
-            "genre": genre,
-            "file_path": game_path
-        }
-
-        metadata_path = os.path.join(game_folder, "metadata.json")
-        with open(metadata_path, "w", encoding="utf-8") as file:
-            json.dump(metadata, file, indent=2)
+            "genre": genre_label,
+            "detected_genre": detected_genre,
+            "engine": engine,
+        })
+        save_generation_log(game_id, {
+            "game_id": game_id,
+            "engine": engine,
+            "detected_genre": detected_genre,
+            "attempts": attempts,
+            "warnings": warnings,
+            "total_usage": total_usage,
+            "latency_s": round(time.time() - start_ts, 2),
+        })
+        append_jsonl(GENERATIONS_LOG, {
+            "timestamp": _utc_now_iso(),
+            "game_id": game_id,
+            "user_request": raw_request_text[:500],
+            "engine": engine,
+            "detected_genre": detected_genre,
+            "attempts": attempts,
+            "success": len(warnings) == 0,
+            "warnings": warnings,
+            "total_usage": total_usage,
+            "latency_s": round(time.time() - start_ts, 2),
+        })
 
         return jsonify({
             "game_id": game_id,
             "title": title,
             "status": "created",
-            "play_url": f"/play_game/{game_id}"
+            "play_url": f"/play_game/{game_id}",
+            "attempts": len(attempts),
+            "warnings": warnings,
+            "genre": detected_genre,
         })
-        
+
     except Exception as e:
         app.logger.error(f"Error in generate_game: {str(e)}")
         return jsonify({"error": "Failed to generate game"}), 500
 
+
 @app.route('/update_game', methods=['POST'])
 @limiter.limit("5 per hour")
 def update_game():
-    """Update an existing game based on feedback"""
+    """Modify an existing game based on user feedback."""
     try:
         data = request.get_json()
         if not data or 'feedback' not in data or 'current_html' not in data:
             return jsonify({"error": "Missing required fields"}), 400
-            
+
         feedback = data["feedback"]
         current_html = data["current_html"]
         game_id = data.get("game_id")
-        
+
         claude_prompt = f"""Here is the current HTML game code:
 
 {current_html}
@@ -409,113 +330,263 @@ RULES:
 
 Return ONLY the complete updated HTML file. No explanations, no markdown."""
 
-        # Use streaming to avoid SDK timeout on large requests
         result_text = ""
         with claude_client.messages.stream(
             model="claude-sonnet-4-20250514",
             max_tokens=16000,
             temperature=0.7,
-            messages=[{
-                "role": "user",
-                "content": claude_prompt
-            }]
+            messages=[{"role": "user", "content": claude_prompt}],
         ) as stream:
             for text in stream.text_stream:
                 result_text += text
 
         updated_html = extract_html_from_response(result_text)
-        
-        # If game_id is provided, update the saved file
+
         if game_id:
             try:
-                game_id = sanitize_game_id(game_id)
-                game_folder = os.path.join(GAMES_DIR, game_id)
-                if os.path.exists(game_folder):
-                    game_path = os.path.join(game_folder, "index.html")
-                    with open(game_path, "w", encoding="utf-8") as file:
-                        file.write(updated_html)
+                sanitize_game_id(game_id)
+                if game_exists(game_id):
+                    overwrite_game_html(game_id, updated_html)
             except ValueError:
-                pass  # Invalid game_id, just return the HTML without saving
-        
+                pass
+
         return jsonify({"html": updated_html})
-        
+
     except Exception as e:
         app.logger.error(f"Error in update_game: {str(e)}")
         return jsonify({"error": "Failed to update game"}), 500
 
-@app.route("/get_game/<game_id>", methods=["GET"])
-def get_game(game_id):
-    """Retrieve a saved game by ID"""
+
+@app.route('/report_broken_game', methods=['POST'])
+@limiter.limit("5 per hour")
+def report_broken_game():
+    """Accept a bug report, ask Claude to fix, validate, archive prior version, save the fix."""
+    start_ts = time.time()
     try:
-        game_id = sanitize_game_id(game_id)
-        game_path = os.path.join(GAMES_DIR, game_id, "index.html")
-        metadata_path = os.path.join(GAMES_DIR, game_id, "metadata.json")
-        
-        if not os.path.exists(game_path):
+        data = request.get_json()
+        if not data or 'game_id' not in data or 'user_description' not in data:
+            return jsonify({"error": "Missing 'game_id' or 'user_description'"}), 400
+
+        try:
+            game_id = sanitize_game_id(data['game_id'])
+        except ValueError:
+            return jsonify({"error": "Invalid game ID"}), 400
+
+        description = (data.get('user_description') or '').strip()
+        if not description:
+            return jsonify({"error": "user_description cannot be empty"}), 400
+
+        current_html = load_game_html(game_id)
+        if current_html is None:
             return jsonify({"error": "Game not found"}), 404
-        
-        with open(game_path, "r", encoding="utf-8") as file:
-            game_content = file.read()
-        
-        metadata = {}
-        if os.path.exists(metadata_path):
-            with open(metadata_path, "r", encoding="utf-8") as file:
-                metadata = json.load(file)
-        
+
+        metadata = load_metadata(game_id)
+        engine = metadata.get("engine") or "phaser"
+        engine_tag = "3d" if engine == "threejs" else "2d"
+        system_prompt = GAME_SYSTEM_PROMPT_3D if engine_tag == "3d" else GAME_SYSTEM_PROMPT_2D
+
+        messages = [
+            {"role": "user", "content": (
+                f"This game has a reported bug: {description}\n\n"
+                "Fix it while keeping all 14 technical requirements from the system prompt satisfied. "
+                "Output only the corrected HTML file. No explanation, no markdown fences."
+            )},
+            {"role": "assistant", "content": current_html},
+            {"role": "user", "content": (
+                "Return the complete corrected HTML now. Preserve working gameplay. "
+                "Output ONLY the HTML."
+            )},
+        ]
+
+        try:
+            fixed_text, usage = _stream_claude(claude_client, messages=messages, system=system_prompt)
+        except Exception as e:
+            app.logger.error(f"report_broken_game LLM error: {e}")
+            return jsonify({"error": "Failed to contact model"}), 502
+
+        fixed_html = extract_html_from_response(fixed_text)
+        passed, failures = validate_game_html(fixed_html, engine=engine_tag)
+        warnings = [] if passed else failures
+
+        if not fixed_html or len(fixed_html) < 2000:
+            append_jsonl(BUG_REPORTS_LOG, {
+                "timestamp": _utc_now_iso(),
+                "game_id": game_id,
+                "description": description[:500],
+                "engine": engine,
+                "applied": False,
+                "warnings": ["fix output too short or empty"] + failures,
+                "usage": usage,
+                "latency_s": round(time.time() - start_ts, 2),
+            })
+            return jsonify({
+                "game_id": game_id,
+                "status": "fix_rejected",
+                "play_url": f"/play_game/{game_id}",
+                "warnings": ["fix output too short or empty"] + failures,
+            }), 200
+
+        archived_as = archive_current_version(game_id, current_html)
+        overwrite_game_html(game_id, fixed_html)
+
+        append_jsonl(BUG_REPORTS_LOG, {
+            "timestamp": _utc_now_iso(),
+            "game_id": game_id,
+            "description": description[:500],
+            "engine": engine,
+            "archived_as": archived_as,
+            "applied": True,
+            "validation_passed": passed,
+            "warnings": warnings,
+            "usage": usage,
+            "latency_s": round(time.time() - start_ts, 2),
+        })
+
         return jsonify({
             "game_id": game_id,
-            "html": game_content,
-            "metadata": metadata
+            "status": "fixed",
+            "play_url": f"/play_game/{game_id}",
+            "archived_as": archived_as,
+            "warnings": warnings,
         })
-        
+
+    except Exception as e:
+        app.logger.error(f"Error in report_broken_game: {e}")
+        return jsonify({"error": "Failed to process bug report"}), 500
+
+
+@app.route('/suggest_improvements', methods=['POST'])
+@limiter.limit("20 per hour")
+def suggest_improvements():
+    """Return a small set of clickable suggestions to improve a generated game.
+
+    Combines static validator signals (definite fixes for detected breakage) with
+    Gemini-proposed polish ideas grounded in the actual HTML. Each suggestion has
+    a short label the UI can show as a chip, and a `prompt` the user can send
+    through /update_game.
+    """
+    try:
+        data = request.get_json() or {}
+        game_id = data.get("game_id")
+        html = data.get("html")
+        engine = (data.get("engine") or "phaser").lower()
+        engine_tag = "3d" if engine == "threejs" else "2d"
+
+        if game_id and not html:
+            try:
+                sanitize_game_id(game_id)
+            except ValueError:
+                return jsonify({"error": "Invalid game ID"}), 400
+            html = load_game_html(game_id)
+            if html is None:
+                return jsonify({"error": "Game not found"}), 404
+            metadata = load_metadata(game_id)
+            if metadata.get("engine"):
+                engine_tag = "3d" if metadata["engine"] == "threejs" else "2d"
+
+        if not html:
+            return jsonify({"error": "Missing 'game_id' or 'html'"}), 400
+
+        fixes: list[dict] = []
+        passed, failures = validate_game_html(html, engine=engine_tag)
+        if not passed:
+            summary = "; ".join(failures[:3])
+            fixes.append({
+                "kind": "fix",
+                "label": "Fix detected issues",
+                "prompt": (
+                    "The game currently has these problems that must be fixed: "
+                    f"{summary}. Please repair these while preserving all working gameplay."
+                ),
+            })
+
+        snippet = html[:8000]
+        engine_hint = "Three.js r128 3D game" if engine_tag == "3d" else "2D Phaser/canvas game"
+        query = f"""You are a senior game developer reviewing a generated {engine_hint} HTML file.
+
+Propose EXACTLY 3 concrete, high-impact improvements a non-technical user could request. Each must be specific to what you see in the code (not generic advice).
+
+Categories to consider: visual polish (particles, screen shake, color flashes), graphics (lighting/shadows for 3D, sprite quality for 2D), game feel (tweens, easing, sound cues — no audio though), mechanics (difficulty curve, enemy variety), controls.
+
+Return ONLY a JSON array, no prose, no markdown fences. Each item: {{"label": "<=5 word chip title", "prompt": "one-sentence instruction for the developer to implement"}}.
+
+CODE (truncated):
+{snippet}"""
+
+        try:
+            raw = _call_gemini_with_fallback(query)
+        except Exception as e:
+            app.logger.warning(f"suggest_improvements gemini failed: {e}")
+            raw = ""
+
+        ideas: list[dict] = []
+        if raw:
+            import json, re as _re
+            m = _re.search(r'\[[\s\S]*\]', raw)
+            if m:
+                try:
+                    parsed = json.loads(m.group(0))
+                    if isinstance(parsed, list):
+                        for item in parsed[:3]:
+                            label = (item.get("label") or "").strip()
+                            prompt_text = (item.get("prompt") or "").strip()
+                            if label and prompt_text:
+                                ideas.append({
+                                    "kind": "improve",
+                                    "label": label[:40],
+                                    "prompt": prompt_text[:400],
+                                })
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+        return jsonify({
+            "suggestions": fixes + ideas,
+            "has_issues": bool(fixes),
+            "validator_warnings": failures,
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in suggest_improvements: {e}")
+        return jsonify({"error": "Failed to produce suggestions"}), 500
+
+
+@app.route("/get_game/<game_id>", methods=["GET"])
+def get_game(game_id):
+    """Retrieve a saved game by ID."""
+    try:
+        game_id = sanitize_game_id(game_id)
+        html = load_game_html(game_id)
+        if html is None:
+            return jsonify({"error": "Game not found"}), 404
+        metadata = load_metadata(game_id)
+        return jsonify({"game_id": game_id, "html": html, "metadata": metadata})
     except ValueError:
         return jsonify({"error": "Invalid game ID"}), 400
     except Exception as e:
         app.logger.error(f"Error in get_game: {str(e)}")
         return jsonify({"error": "Failed to retrieve game"}), 500
 
+
 @app.route("/list_games", methods=["GET"])
 def list_games():
-    """List all saved games"""
+    """List all saved games sorted newest first."""
     try:
-        games = []
-        if os.path.exists(GAMES_DIR):
-            for game_id in os.listdir(GAMES_DIR):
-                try:
-                    game_id = sanitize_game_id(game_id)
-                    metadata_path = os.path.join(GAMES_DIR, game_id, "metadata.json")
-                    if os.path.exists(metadata_path):
-                        with open(metadata_path, "r", encoding="utf-8") as file:
-                            metadata = json.load(file)
-                            games.append(metadata)
-                except (ValueError, json.JSONDecodeError):
-                    continue  # Skip invalid game directories
-        
-        # Sort by creation date, newest first
-        games.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        
-        return jsonify({"games": games})
-        
+        return jsonify({"games": list_all_games()})
     except Exception as e:
         app.logger.error(f"Error in list_games: {str(e)}")
         return jsonify({"error": "Failed to list games"}), 500
 
+
 @app.route('/play_game/<game_id>', methods=['GET'])
 def play_game(game_id):
-    """Serve the game HTML directly for playing with CSP protection"""
+    """Serve a game's HTML file with a Content Security Policy header."""
     try:
         game_id = sanitize_game_id(game_id)
-        game_path = os.path.join(GAMES_DIR, game_id, "index.html")
-        
-        if not os.path.exists(game_path):
+        path = game_html_path(game_id)
+        if not os.path.exists(path):
             return "Game not found", 404
-        
-        # Create response with the file
-        response = flask.make_response(send_file(game_path))
-        
-        # Add Content Security Policy header to restrict what the game can load
-        # Allows: scripts from self and CDN, inline scripts/styles (needed for games)
-        # Blocks: scripts from unknown domains, tracking pixels, external resources
+
+        response = flask.make_response(send_file(path))
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
@@ -523,14 +594,13 @@ def play_game(game_id):
             "img-src 'self' data:; "
             "connect-src 'self'"
         )
-        
         return response
-        
     except ValueError:
         return "Invalid game ID", 400
     except Exception as e:
         app.logger.error(f"Error in play_game: {str(e)}")
         return "Error loading game", 500
-    
+
+
 if __name__ == "__main__":
     app.run(debug=True, host='127.0.0.1', port=5000)

@@ -42,8 +42,28 @@ def mock_gemini():
 
 @pytest.fixture
 def mock_claude():
+    """Mock the Claude client. Supports both .messages.create() and .messages.stream().
+
+    For streaming, each call to .stream(...) returns a fresh context manager whose
+    text_stream iterator yields the seed Pong example — enough to pass validation.
+    """
+    seed_path = os.path.join(os.path.dirname(__file__), "..", "seed_example.html")
+    with open(seed_path, "r", encoding="utf-8") as f:
+        seed_html = f.read()
+
+    def make_stream_ctx(*args, **kwargs):
+        ctx = MagicMock()
+        ctx.__enter__ = MagicMock(return_value=ctx)
+        ctx.__exit__ = MagicMock(return_value=False)
+        ctx.text_stream = iter([seed_html])
+        ctx.get_final_message.return_value = MagicMock(
+            usage=MagicMock(input_tokens=100, output_tokens=200)
+        )
+        return ctx
+
     with patch("backend.claude_client") as mock:
+        mock.messages.stream.side_effect = make_stream_ctx
         mock.messages.create.return_value = MagicMock(
-            content=[MagicMock(text="<!DOCTYPE html><html><body><h1>Game</h1></body></html>")]
+            content=[MagicMock(text=seed_html)]
         )
         yield mock
