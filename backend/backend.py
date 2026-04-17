@@ -48,33 +48,51 @@ def sanitize_game_id(game_id):
         raise ValueError("Invalid game ID format")
     return game_id
 
-def extract_html_from_response(text):
-    """Extract HTML code from Claude's response, removing markdown code blocks"""
+def extract_html_from_response(text: str) -> str:
+    """Extract HTML code from Claude's response, removing markdown code blocks.
+
+    Takes raw text from the Claude API (which may be wrapped in markdown
+    code fences) and returns clean HTML ready to be saved or served.
+
+    Args:
+        text: Raw response text from Claude API.
+
+    Returns:
+        Cleaned HTML string.
+
+    Raises:
+        ValueError: If the input is empty or not a string.
+    """
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Response text must be a non-empty string")
+
     original_length = len(text)
-    
-    # Remove markdown code blocks if present
-    text = re.sub(r'^```html\s*\n', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^```\s*\n', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n```$', '', text, flags=re.MULTILINE)
-    
-    # Clean up any remaining markdown artifacts
-    text = re.sub(r'```html', '', text)
-    text = re.sub(r'```', '', text)
-    
-    cleaned_text = text.strip()
-    
-    # Log for debugging
+
+    # Strip markdown code fences in one pass: ```html ... ``` or ``` ... ```
+    cleaned_text = re.sub(
+        r'```(?:html)?\s*\n?(.*?)\n?```',
+        r'\1',
+        text,
+        flags=re.DOTALL
+    ).strip()
+
+    # If regex didn't match any fences, fall back to the original text stripped
+    if cleaned_text == text.strip():
+        cleaned_text = text.strip()
+
     app.logger.info(f"Original response length: {original_length}")
     app.logger.info(f"Cleaned HTML length: {len(cleaned_text)}")
-    
-    # Check if HTML seems complete
+
+    # Validate that the result looks like HTML
+    if not cleaned_text.lower().startswith('<!doctype') and '<html' not in cleaned_text.lower():
+        app.logger.warning("Response does not appear to contain valid HTML")
+
     if not cleaned_text.lower().endswith('</html>'):
         app.logger.warning("HTML response appears to be truncated - missing closing </html> tag")
-        
-    # Check for common truncation indicators
+
     if cleaned_text.endswith('...'):
         app.logger.warning("Response appears to be truncated (ends with ...)")
-    
+
     return cleaned_text
 
 @app.route('/enhance_prompt', methods=['POST'])
