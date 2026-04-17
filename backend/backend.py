@@ -48,33 +48,51 @@ def sanitize_game_id(game_id):
         raise ValueError("Invalid game ID format")
     return game_id
 
-def extract_html_from_response(text):
-    """Extract HTML code from Claude's response, removing markdown code blocks"""
+def extract_html_from_response(text: str) -> str:
+    """Extract HTML code from Claude's response, removing markdown code blocks.
+
+    Takes raw text from the Claude API (which may be wrapped in markdown
+    code fences) and returns clean HTML ready to be saved or served.
+
+    Args:
+        text: Raw response text from Claude API.
+
+    Returns:
+        Cleaned HTML string.
+
+    Raises:
+        ValueError: If the input is empty or not a string.
+    """
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Response text must be a non-empty string")
+
     original_length = len(text)
-    
-    # Remove markdown code blocks if present
-    text = re.sub(r'^```html\s*\n', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^```\s*\n', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n```$', '', text, flags=re.MULTILINE)
-    
-    # Clean up any remaining markdown artifacts
-    text = re.sub(r'```html', '', text)
-    text = re.sub(r'```', '', text)
-    
-    cleaned_text = text.strip()
-    
-    # Log for debugging
+
+    # Strip markdown code fences in one pass: ```html ... ``` or ``` ... ```
+    cleaned_text = re.sub(
+        r'```(?:html)?\s*\n?(.*?)\n?```',
+        r'\1',
+        text,
+        flags=re.DOTALL
+    ).strip()
+
+    # If regex didn't match any fences, fall back to the original text stripped
+    if cleaned_text == text.strip():
+        cleaned_text = text.strip()
+
     app.logger.info(f"Original response length: {original_length}")
     app.logger.info(f"Cleaned HTML length: {len(cleaned_text)}")
-    
-    # Check if HTML seems complete
+
+    # Validate that the result looks like HTML
+    if not cleaned_text.lower().startswith('<!doctype') and '<html' not in cleaned_text.lower():
+        app.logger.warning("Response does not appear to contain valid HTML")
+
     if not cleaned_text.lower().endswith('</html>'):
         app.logger.warning("HTML response appears to be truncated - missing closing </html> tag")
-        
-    # Check for common truncation indicators
+
     if cleaned_text.endswith('...'):
         app.logger.warning("Response appears to be truncated (ends with ...)")
-    
+
     return cleaned_text
 
 @app.route('/enhance_prompt', methods=['POST'])
@@ -85,48 +103,97 @@ def enhance_prompt():
         data = request.get_json()
         if not data or 'prompt' not in data:
             return jsonify({"error": "Missing 'prompt' in request"}), 400
-            
+
         prompt = data['prompt']
-        
+        engine = data.get('engine', 'phaser')
+
         if not prompt or len(prompt.strip()) == 0:
             return jsonify({"error": "Prompt cannot be empty"}), 400
-        
-        query = f"""You are a game design assistant. The user will give you a short description of a game idea.
-Your task is to enhance and refine this prompt into a detailed game concept suitable for creating a PhaserJS game.
 
-Make the game concept:
-- Clear and specific
-- Implementable in PhaserJS
-- Fun and engaging
-- Not too complex for a single HTML file
-- Include specific mechanics, controls, and objectives
-- Donot include music and particle emitters.
+        if engine == "threejs":
+            engine_context = """The game will be built as a 3D browser game using Three.js.
+Think in terms of 3D space: camera angles, lighting, 3D models made from basic geometries (boxes, cylinders, spheres).
+Suitable genres: driving, parking, simulation, racing, flight, 3D exploration, tower defense with 3D view.
+Controls should consider 3D movement (forward/backward, turning, camera rotation)."""
+        else:
+            engine_context = """The game will be built as a 2D browser game using PhaserJS.
+Think in terms of 2D space: side-scrolling, top-down, or fixed-screen views.
+Suitable genres: platformers, shooters, puzzles, arcade, match-3, endless runners.
+All sprites will be created programmatically or loaded from free sprite libraries."""
 
-Original prompt: {prompt}
+        query = f"""You are an expert game designer. Transform the user's raw idea into a polished, implementable game concept.
 
-Generate a refined game concept with all the necessary details."""
-        
+ENGINE CONTEXT:
+{engine_context}
+
+USER'S IDEA: {prompt}
+
+IMPORTANT — Identify the actual game the user wants. If they mention a classic (Pacman, Tetris, Snake, Breakout, Space Invaders, Flappy Bird, etc.), design the concept around THAT specific game's mechanics. Don't drift into a generic shooter or platformer if the user asked for something specific.
+
+Your response MUST include ALL of the following clearly labeled sections:
+
+**TITLE:** A creative, catchy game title (not generic like "AI Game")
+
+**GENRE:** The specific game genre — be precise (e.g., "Top-down maze arcade", "Side-scrolling platformer", "Grid-based puzzle", "Space shooter with waves")
+
+**DESCRIPTION:** A 3-paragraph game description covering:
+- Core gameplay loop (what does the player do moment-to-moment?)
+- Progression and difficulty (how does it escalate?)
+- Win/lose conditions (how does the game end?)
+
+**GAME MECHANICS:** Specific mechanics for THIS genre:
+- Exact player movement (grid-based? free? physics-based?)
+- Enemy/obstacle behavior (patrol? chase? random? AI pattern?)
+- Scoring system (points per action)
+- Power-ups or special abilities (if any)
+- Collision and interaction rules
+
+**VISUAL STYLE:** Visual aesthetic (colors, mood, perspective — top-down, side-scrolling, etc.)
+
+**CONTROLS:** Exact control scheme (arrow keys for movement, spacebar for action, etc.)
+
+**OBJECTIVES:** Primary objective and secondary objectives
+
+Keep it concrete and implementable. No music, no sound design."""
+
         client = genai.Client(api_key=GEMINI_API_KEY)
 
         response = client.models.generate_content(
-            model="gemini-3-flash-preview", contents= query
+            model="gemini-2.5-flash", contents=query
         )
-        
+
         response_text = response.text
-        
-        parsed_data = {
-            "title": "AI Generated Game",
+
+        # Extract title from response if present
+        title = "AI Generated Game"
+        genre = "Action"
+        visual_style = "Detailed and polished"
+        controls = "Arrow keys or WASD"
+        objectives = "Complete the game objectives"
+
+        for line in response_text.split('\n'):
+            line_clean = line.strip().replace('**', '')
+            if line_clean.upper().startswith('TITLE:'):
+                title = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('GENRE:'):
+                genre = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('VISUAL STYLE:'):
+                visual_style = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('CONTROLS:'):
+                controls = line_clean.split(':', 1)[1].strip()
+            elif line_clean.upper().startswith('OBJECTIVES:'):
+                objectives = line_clean.split(':', 1)[1].strip()
+
+        return jsonify({
+            "title": title,
             "description": response_text,
-            "genre": "Action",
-            "game_mechanics": ["movement", "collision"],
-            "visual_style": "Simple geometric shapes",
-            "controls": "Arrow keys or WASD",
-            "objectives": "Complete the game objectives"
-            
-        }
-        
-        return jsonify(parsed_data)
-        
+            "genre": genre,
+            "game_mechanics": ["movement", "collision", "scoring"],
+            "visual_style": visual_style,
+            "controls": controls,
+            "objectives": objectives
+        })
+
     except Exception as e:
         app.logger.error(f"Error in enhance_prompt: {str(e)}")
         return jsonify({"error": "Failed to enhance prompt"}), 500
@@ -141,7 +208,8 @@ def generate_game():
             return jsonify({"error": "Missing 'enhanced_prompt' in request"}), 400
             
         enhanced_prompt = data['enhanced_prompt']
-        
+        engine = data.get('engine', 'phaser')
+
         # Handle both string and object types for enhanced_prompt
         if isinstance(enhanced_prompt, str):
             description = enhanced_prompt
@@ -160,99 +228,121 @@ def generate_game():
             controls = enhanced_prompt.get('controls', 'Arrow keys or WASD')
             objectives = enhanced_prompt.get('objectives', 'Complete the game objectives')
 
-        claude_prompt = f"""Create a complete, fully functional HTML file for a game using PhaserJS based on this detailed game concept:
+        claude_prompt = f"""Build a complete, polished, PLAYABLE PhaserJS game in a single HTML file.
+
+CONCEPT: {title} ({genre})
+{description}
+Mechanics: {mechanics}
+Controls: {controls}
+Objectives: {objectives}
+Visual Style: {visual_style}
+
+Before writing code, think carefully about what makes THIS specific game genre fun:
+- If it's a maze/arcade game (Pacman-style): grid-based movement, wall collision, dots to collect, enemies with simple AI patrol or chase logic, win condition when all dots collected
+- If it's a platformer: gravity, jumping, platforms to land on, enemies that walk and can be defeated, collectibles, exit/flag
+- If it's a shooter: projectile spawning + group, enemy waves, health system, power-ups, game over on death
+- If it's a puzzle: turn-based logic, click/drag interactions, level progression, move counter
+- If it's an endless runner: auto-scrolling world, jump/duck mechanics, obstacles, increasing speed
+
+Match the mechanics to the genre — do NOT generate a generic shooter if the user asked for a maze game.
+
+SETUP:
+- Load Phaser 3.80.1: https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js
+- Canvas 800x600, Phaser.AUTO, arcade physics (gravity set appropriately for the genre)
+
+TEXTURE RULES (critical — get this wrong and the game is broken):
+For custom sprites, use this EXACT pattern in preload():
+  const gfx = this.make.graphics({{ add: false }});
+  gfx.fillStyle(0xffff00); gfx.fillCircle(16, 16, 14);
+  gfx.generateTexture('player', 32, 32); gfx.destroy();
+Then use by string key: this.player = this.physics.add.sprite(x, y, 'player');
+
+NEVER: this.add.graphics() for textures. NEVER: sprite.setTexture(gfx.generateTexture()). NEVER: fillStar, fillHexagon, fillPolygon.
+
+You may also load free sprites from labs.phaser.io (phaser-dude.png, star.png, bomb.png, diamond.png, coin.png, platform.png) or backgrounds from labs.phaser.io/assets/skies/.
+
+REQUIRED FEATURES:
+- Single GameScene class with preload(), create(), and update() methods
+- Responsive keyboard input (this.cursors = this.input.keyboard.createCursorKeys())
+- A functional game loop matching the genre (not just random sprites floating around)
+- Win/lose conditions with clear end states
+- Score display (this.add.text()) updated in the update() loop
+- Game over screen with restart capability (this.scene.restart() or keyboard press to restart)
+- At least 3 distinct object types that interact (player, enemies/hazards, collectibles/goals)
+- Collision detection between appropriate pairs (this.physics.add.collider and overlap)
+- Visual feedback on interactions (tweens on collect, color flashes on damage)
+
+Double-check before outputting:
+1. Does the game mechanic match what the user asked for?
+2. Will it show visible sprites on load (not a black screen)?
+3. Are there any undefined functions or missing texture keys?
+4. Is there a clear way to win AND a clear way to lose?
+
+OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations. No markdown fences. Zero JavaScript errors."""
+
+        # Three.js prompt for 3D games
+        if engine == "threejs":
+            claude_prompt = f"""Create a complete, polished 3D game in a single HTML file using Three.js.
 
 GAME CONCEPT:
 Title: {title}
 Description: {description}
 Genre: {genre}
 Game Mechanics: {mechanics}
-Visual Style: {visual_style}
 Controls: {controls}
 Objectives: {objectives}
 
-CRITICAL REQUIREMENTS FOR A FULLY FUNCTIONAL GAME:
+SETUP:
+- Load Three.js r128: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+- Canvas fills window (100vw/100vh), appended to document.body
+- requestAnimationFrame game loop, window resize handler
 
-1. **Complete HTML Structure**: Create a self-contained HTML file with proper DOCTYPE, head, and body tags
-2. **PhaserJS 3.x Integration**: Load Phaser from CDN: https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js
-3. **Proper Physics Engine**: Use Phaser's Arcade Physics system with proper collision detection, gravity, and realistic movement
-4. **Game States Management**: Include proper game states (preload, create, update) with smooth transitions
-5. **Responsive Controls**: Implement smooth, responsive keyboard controls (arrow keys/WASD) with proper input handling
-6. **Visual Polish**: Create visually appealing game objects using ONLY Phaser's Graphics API with programmatically drawn sprites, shapes, colors, animations, and effects - NO external image assets
-8. **Scoring System**: Implement a functional scoring system with proper UI display
-9. **Game Mechanics**: 
-   - Proper collision detection between all game objects
-   - Smooth player movement with acceleration/deceleration
-   - Enemy AI with varied behaviors and attack patterns
-   - Power-ups with visual and functional effects
-   - Health/lives system with proper game over conditions
-10. **Performance Optimization**: Use object pooling for bullets/enemies, efficient sprite management
-11. **Game Loop**: Proper game loop with pause/resume functionality
-12. **UI Elements**: Score display, health bars, game over screen, restart functionality
+SCENE:
+- PerspectiveCamera + WebGLRenderer with shadowMap.enabled = true
+- Ambient + directional light (castShadow = true)
+- Ground plane with grid/color pattern
+- Use BoxGeometry, CylinderGeometry, SphereGeometry, PlaneGeometry
+- MeshStandardMaterial with varied colors (no monochrome)
+- Group related meshes (THREE.Group for cars: body + cabin + 4 wheels)
 
+GAMEPLAY:
+- Third-person camera following player, smooth lerp
+- Keyboard input via keydown/keyup listeners (WASD or arrows)
+- Smooth acceleration/deceleration — NOT instant teleport
+- Realistic turning for vehicles (steer angle affects heading)
+- Custom physics: bounding-box collision, velocity model, boundary checks
+- NO external physics libs, NO import/export, NO OrbitControls
 
-TECHNICAL SPECIFICATIONS:
-- Use Phaser 3.80.1 or later
-- Canvas size: 800x600 pixels
-- 60 FPS target
-- Create all assets programmatically using Phaser's Graphics API - NO external image/audio files
-- Clean, well-commented code structure
-- No external dependencies except Phaser CDN
+REQUIRED:
+- Player-controlled 3D object
+- 5+ obstacles/interactive objects
+- HUD overlay (HTML div, position: absolute) — score, timer, objectives
+- Win/lose conditions + restart functionality
+- Environment props (trees, buildings) for visual richness
 
-ASSET CREATION REQUIREMENTS:
-- CREATE ALL ASSETS PROGRAMMATICALLY - No external files allowed
-- Use Phaser's Graphics API to draw all sprites, backgrounds, UI elements
-- Generate sounds using Web Audio API with oscillators and frequency manipulation
-- Create textures using Phaser's built-in texture generation capabilities
-- Use geometric shapes, gradients, and patterns for all visual elements
-- All game assets must be self-contained within the HTML file
+Example car pattern:
+  const car = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.5, 4), new THREE.MeshStandardMaterial({{color: 0xff0000}}));
+  body.castShadow = true; car.add(body);
+  // ... add cabin + 4 wheels (CylinderGeometry rotated on z by PI/2)
 
-PHASER.JS FUNCTION VALIDATION:
-- ONLY use valid Phaser.js 3.x functions and methods that exist in the official API
-- For Graphics API, use ONLY these valid functions:
-    * fillStyle(color, alpha?)
-    * lineStyle(width, color, alpha?)
-    * fillRect(x, y, width, height)
-    * strokeRect(x, y, width, height)
-    * fillCircle(x, y, radius)
-    * strokeCircle(x, y, radius)
-    * fillTriangle(x1, y1, x2, y2, x3, y3)
-    * strokeTriangle(x1, y1, x2, y2, x3, y3)
-    * fillPoints(points, closeShape=true)
-    * strokePoints(points, closeShape=true)
-    * (optional) fillEllipse(x, y, width, height)
-    * (optional) strokeEllipse(x, y, width, height)
-    * (optional) fillRoundedRect(x, y, width, height, radius)
-    * (optional) strokeRoundedRect(x, y, width, height, radius)
-- DO NOT use non-existent functions like fillStar, fillHexagon, or any other made-up functions
-- For creating star shapes, use fillPolygon with calculated star points
-- Test all function calls against the official Phaser 3 documentation
-- If unsure about a function, use basic shapes like rectangles, circles, and triangles
-- this.add.graphics(...).fillStyle(...).fillPolygon is not a function
+OUTPUT: Complete HTML only — DOCTYPE, head, body. No explanations, no markdown fences. Zero JS errors. Visible 3D scene on load."""
 
-GAMEPLAY QUALITY STANDARDS:
-- The game must be immediately playable and engaging
-- Controls must feel responsive and smooth
-- Game mechanics must work flawlessly without bugs
-- Visual feedback must be clear and satisfying
-- Game difficulty should be balanced and fair
-- Include proper win/lose conditions
-- All Phaser.js functions MUST be valid and working
-
-Return ONLY the complete HTML code with no explanations or markdown formatting. The game should be production-ready and fully functional with NO JavaScript errors."""
-
-        response = claude_client.messages.create(
+        # Use streaming to avoid SDK timeout on large responses
+        result_text = ""
+        with claude_client.messages.stream(
             model="claude-sonnet-4-20250514",
-            max_tokens=20000,
-            temperature=0.7,
+            max_tokens=16000,
+            temperature=0.6,
             messages=[{
-                "role": "user", 
+                "role": "user",
                 "content": claude_prompt
             }]
-        )
-        
-        game_html = extract_html_from_response(response.content[0].text)
-        print(game_html)
+        ) as stream:
+            for text in stream.text_stream:
+                result_text += text
+
+        game_html = extract_html_from_response(result_text)
         
         # Generate unique game ID and save the game
         game_id = str(uuid.uuid4())
@@ -308,29 +398,32 @@ def update_game():
 
 Please update the game based on this feedback: {feedback}
 
-CRITICAL REQUIREMENTS:
-1. ONLY use valid Phaser.js 3.x functions that exist in the official API
-2. DO NOT use non-existent functions like fillStar, fillHexagon, or any made-up Graphics functions
-3. CREATE ALL ASSETS PROGRAMMATICALLY - No external image or audio files allowed
-4. Use Phaser's Graphics API to draw all sprites, backgrounds, UI elements
-5. Generate sounds using Web Audio API with oscillators - no external audio files
-6. All game content must be self-contained within the HTML file
+RULES:
+1. Return the COMPLETE updated HTML file — do not omit any sections
+2. Keep all existing working code — only change what the feedback asks for
+3. You may load free sprites from https://labs.phaser.io/assets/ if it improves visuals
+4. For programmatic textures: use this.make.graphics({{ add: false }}), .generateTexture('key', w, h), .destroy()
+5. NEVER do sprite.setTexture(graphics.generateTexture()) — this causes black screens
+6. Add visual polish: tweens, screen shake, color flashes for feedback
+7. ZERO JavaScript errors — the game must work immediately after update
 
-Valid Graphics functions include: fillRect, fillCircle, fillTriangle, fillPolygon, strokeRect, strokeCircle, strokeTriangle, strokePolygon, fillStyle, lineStyle.
+Return ONLY the complete updated HTML file. No explanations, no markdown."""
 
-Keep the same PhaserJS structure but implement the requested changes. Return ONLY the complete updated HTML file with no explanations. Ensure NO JavaScript errors occur and NO external asset dependencies."""
-
-        response = claude_client.messages.create(
+        # Use streaming to avoid SDK timeout on large requests
+        result_text = ""
+        with claude_client.messages.stream(
             model="claude-sonnet-4-20250514",
-            max_tokens=32000,
+            max_tokens=16000,
             temperature=0.7,
             messages=[{
                 "role": "user",
                 "content": claude_prompt
             }]
-        )
-        
-        updated_html = extract_html_from_response(response.content[0].text)
+        ) as stream:
+            for text in stream.text_stream:
+                result_text += text
+
+        updated_html = extract_html_from_response(result_text)
         
         # If game_id is provided, update the saved file
         if game_id:

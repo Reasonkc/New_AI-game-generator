@@ -1,10 +1,13 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff } from "lucide-react";
+import { Send, ArrowLeft, AlertCircle, Loader, Play, Download, Save, RefreshCw, Sparkles, Code, Gamepad2, Edit3, CheckCircle, Eye, EyeOff, Maximize, Minimize } from "lucide-react";
+import ConsentModal, { hasConsent } from "./components/ConsentModal";
+import LoadingWithJokes from "./components/LoadingWithJokes";
 import TemplateSelector from "./components/TemplateSelector";
 
 export default function Create() {
   const [prompt, setPrompt] = useState("");
+  const [consentGiven, setConsentGiven] = useState(hasConsent());
   const [enhancedPrompt, setEnhancedPrompt] = useState("");
   const [gameHtml, setGameHtml] = useState("");
   const [title, setTitle] = useState("");
@@ -17,7 +20,11 @@ export default function Create() {
   const [successMessage, setSuccessMessage] = useState("");
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editablePrompt, setEditablePrompt] = useState("");
+  const [gameEngine, setGameEngine] = useState("phaser"); // "phaser" or "threejs"
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [generationTime, setGenerationTime] = useState(null); // seconds it took
   const gamePreviewRef = useRef(null);
+  const gameContainerRef = useRef(null);
 
   // Check if HTML is complete and valid
   const validateGameHtml = (html) => {
@@ -30,6 +37,13 @@ export default function Create() {
     
     return hasHtmlTags && hasPhaser && notTruncated;
   };
+
+  // ESC key exits fullscreen
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === "Escape") setIsFullscreen(false); };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, []);
 
   // Show success message temporarily
   const showSuccess = (message) => {
@@ -69,7 +83,7 @@ export default function Create() {
       const response = await fetch("http://127.0.0.1:5000/enhance_prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt }),
+        body: JSON.stringify({ prompt: prompt, engine: gameEngine }),
       });
       
       if (response.ok) {
@@ -97,13 +111,16 @@ export default function Create() {
   const generateGame = async (promptToUse = enhancedPrompt || prompt) => {
     setLoading(true);
     setError(null);
+    setGenerationTime(null);
+    const startTime = Date.now();
 
     try {
       const response = await fetch("http://127.0.0.1:5000/generate_game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          enhanced_prompt: promptToUse
+        body: JSON.stringify({
+          enhanced_prompt: promptToUse,
+          engine: gameEngine
         }),
       });
 
@@ -112,14 +129,19 @@ export default function Create() {
         console.log("Generated game response:", data);
         setGameId(data.game_id);
         setTitle(data.title);
-        
-        // Fetch HTML separately
-        const htmlResponse = await fetch(`http://127.0.0.1:5000${data.play_url}`);
-        const html = await htmlResponse.text();
-        setGameHtml(html);
-        
+
+        // Fetch HTML via get_game (returns JSON with html field)
+        const gameResponse = await fetch(`http://127.0.0.1:5000/get_game/${data.game_id}`);
+        if (gameResponse.ok) {
+          const gameData = await gameResponse.json();
+          setGameHtml(gameData.html);
+        }
+
+        const elapsed = Math.round((Date.now() - startTime) / 100) / 10;
+        setGenerationTime(elapsed);
+
         setCurrentStep(4);
-        showSuccess("Game generated successfully! You can now play, download, or modify it.");
+        showSuccess(`Game generated in ${elapsed}s! You can now play, download, or modify it.`);
       }
     } catch (err) {
       setError("Network error. Please check if the backend is running.");
@@ -137,10 +159,17 @@ export default function Create() {
       return;
     }
 
+    if (!gameHtml) {
+      setError("No game HTML found. Please generate a game first.");
+      return;
+    }
+
     setIsUpdating(true);
     setError(null);
 
     try {
+      console.log("Sending update request:", { game_id: gameId, feedback: feedbackPrompt, html_length: gameHtml.length });
+
       const response = await fetch("http://127.0.0.1:5000/update_game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,26 +179,34 @@ export default function Create() {
           current_html: gameHtml,
         }),
       });
-      
+
+      console.log("Update response status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
-        console.log("Updated game:", data);
-        
-        // Fetch updated HTML
-        const htmlResponse = await fetch(`http://127.0.0.1:5000/play_game/${gameId}`);
-        const html = await htmlResponse.text();
-        setGameHtml(html);
-        
-        setFeedbackPrompt("");
-        showSuccess("Game updated successfully!");
-        
-        if (gamePreviewRef.current) {
-          gamePreviewRef.current.src = gamePreviewRef.current.src;
+        console.log("Updated game response:", data);
+
+        if (data.html) {
+          setGameHtml(data.html);
+          showSuccess("Game updated successfully!");
+        } else {
+          setError("Server returned empty game. Please try again.");
         }
+
+        setFeedbackPrompt("");
+      } else {
+        let errMsg = "Failed to update game. Please try again.";
+        try {
+          const errData = await response.json();
+          errMsg = errData.error || errMsg;
+        } catch (e) {
+          errMsg = `Server error (${response.status}). Please try again.`;
+        }
+        setError(errMsg);
       }
     } catch (err) {
-      setError("Network error. Please check if the backend is running.");
-      console.error("Error:", err);
+      console.error("Update error:", err);
+      setError(err.message || "Network error. Please check if the backend is running.");
     } finally {
       setIsUpdating(false);
     }
@@ -200,12 +237,15 @@ export default function Create() {
     setGameId("");
     setCurrentStep(1);
     setError(null);
+    setGenerationTime(null);
   };
 
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">{/* Success Message */}
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <ConsentModal onAccept={() => setConsentGiven(true)} />
+      {/* Success Message */}
       {successMessage && (
         <div className="fixed top-4 right-4 z-50 flex items-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg">
           <CheckCircle size={20} />
@@ -384,6 +424,39 @@ export default function Create() {
                   </div>
                 </div>
 
+                {/* Engine Selector */}
+                <div className="mt-6">
+                  <label className="block text-sm font-semibold text-gray-900 mb-3">
+                    Game Engine
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setGameEngine("phaser")}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        gameEngine === "phaser"
+                          ? "border-indigo-500 bg-indigo-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900">🎮 2D (PhaserJS)</div>
+                      <div className="text-xs text-gray-500 mt-1">Platformers, shooters, puzzles, arcade games</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGameEngine("threejs")}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        gameEngine === "threejs"
+                          ? "border-indigo-500 bg-indigo-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900">🚗 3D (Three.js)</div>
+                      <div className="text-xs text-gray-500 mt-1">Parking, driving, simulation, 3D environments</div>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="mt-6">
                   <TemplateSelector
                     onSelect={({ title: tpl_title, description }) => {
@@ -397,7 +470,10 @@ export default function Create() {
                   </label>
                   <textarea
                     className="w-full p-6 border border-gray-300 rounded-xl h-48 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200 text-gray-700"
-                    placeholder="Example: Create a space shooter game where the player controls a spaceship and fights alien enemies. The game should have power-ups, multiple levels, and a boss at the end. Use a retro pixel art style with neon colors."
+                    placeholder={gameEngine === "threejs"
+                      ? "Example: A 3D parking game where the player drives a car into a parking spot. Include obstacles, a timer, and multiple difficulty levels with tighter spaces."
+                      : "Example: Create a space shooter game where the player controls a spaceship and fights alien enemies. The game should have power-ups, multiple levels, and a boss at the end."
+                    }
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                   />
@@ -409,12 +485,12 @@ export default function Create() {
                 <div className="mt-8 flex justify-center">
                   <button
                     className={`px-12 py-4 rounded-xl font-semibold text-lg transition-all duration-200 transform ${
-                      loading || !prompt.trim()
+                      loading || !prompt.trim() || !consentGiven
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         : 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 hover:scale-105 shadow-lg hover:shadow-xl'
                     }`}
                     onClick={handlePromptSubmit}
-                    disabled={loading || !prompt.trim()}
+                    disabled={loading || !prompt.trim() || !consentGiven}
                   >
                     {loading ? (
                       <div className="flex items-center">
@@ -446,23 +522,27 @@ export default function Create() {
                     </div>
                     <div>
                       <h2 className="text-3xl font-bold">
-                        {currentStep === 2 ? 'AI Enhancement Complete' : 'Generating Your Game'}
+                        {currentStep === 2 ? (loading ? 'AI is thinking...' : 'AI Enhancement Complete') : 'Generating Your Game'}
                       </h2>
                       <p className="text-emerald-100 mt-1">
-                        {currentStep === 2 ? 'Review and edit your enhanced game concept' : 'Creating an amazing Phaser.js game with full physics'}
+                        {currentStep === 2 ? (loading ? 'Gemini is crafting the perfect game concept for you' : 'Review and edit your enhanced game concept') : `Creating an amazing ${gameEngine === 'threejs' ? '3D Three.js' : '2D PhaserJS'} game`}
                       </p>
                     </div>
                   </div>
-                  {currentStep === 3 && loading && (
+                  {loading && (
                     <div className="flex items-center text-white bg-white/10 px-4 py-2 rounded-xl">
                       <Loader size={20} className="mr-2 animate-spin" />
-                      <span className="font-medium">Generating game...</span>
+                      <span className="font-medium">{currentStep === 2 ? 'Enhancing prompt...' : 'Generating game...'}</span>
                     </div>
                   )}
                 </div>
               </div>
               
               <div className="p-8">
+                {currentStep === 2 && loading && !enhancedPrompt && (
+                  <LoadingWithJokes engine={gameEngine} />
+                )}
+
                 {enhancedPrompt && (
                   <div className="mb-8">
                     <div className="flex items-center justify-between mb-4">
@@ -539,32 +619,7 @@ export default function Create() {
 
                 {/* Loading indicator for game generation */}
                 {currentStep === 3 && loading && (
-                  <div className="mb-8 text-center">
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-8">
-                      <div className="flex flex-col items-center">
-                        <div className="relative mb-6">
-                          <div className="w-20 h-20 border-4 border-blue-200 rounded-full animate-pulse"></div>
-                          <div className="absolute inset-0 w-20 h-20 border-4 border-t-blue-600 rounded-full animate-spin"></div>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">Creating Your Game</h3>
-                        <p className="text-gray-600 mb-4">AI is generating a fully functional Phaser.js game with proper physics and mechanics</p>
-                        <div className="flex items-center space-x-4 text-sm text-gray-500">
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                            Enhanced with Claude AI
-                          </div>
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                            Full Physics Engine
-                          </div>
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
-                            Interactive Gameplay
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <LoadingWithJokes engine={gameEngine} stage="generate" />
                 )}
 
                 <div className="flex justify-between items-center">
@@ -608,7 +663,14 @@ export default function Create() {
                     </div>
                     <div>
                       <h2 className="text-4xl font-bold">{title || "Your AI Game"}</h2>
-                      <p className="text-purple-100 mt-1">Game generated successfully! Ready to play</p>
+                      <p className="text-purple-100 mt-1">
+                        Game generated successfully! Ready to play
+                        {generationTime !== null && (
+                          <span className="ml-2 inline-flex items-center bg-white/20 px-2 py-0.5 rounded-full text-xs font-medium">
+                            ⏱ {generationTime}s
+                          </span>
+                        )}
+                      </p>
                     </div>
                   </div>
                   <div className="flex space-x-3">
@@ -631,21 +693,35 @@ export default function Create() {
               </div>
               
               {/* Game Preview */}
-              <div className="p-8">
-                <div className="bg-gray-900 rounded-xl overflow-hidden shadow-2xl">
-                  <div className="bg-gray-800 px-4 py-2 flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <div className="ml-4 text-gray-400 text-sm">Game Preview</div>
+              <div className={isFullscreen ? "fixed inset-0 z-50 bg-black flex flex-col" : "p-8"}>
+                <div ref={gameContainerRef} className={`bg-gray-900 overflow-hidden shadow-2xl ${isFullscreen ? "flex-1 flex flex-col" : "rounded-xl"}`}>
+                  <div className="bg-gray-800 px-4 py-2 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                      <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      <span className="ml-4 text-gray-400 text-sm">Game Preview</span>
+                    </div>
+                    <button
+                      onClick={() => setIsFullscreen(!isFullscreen)}
+                      className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                      title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                    >
+                      {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                    </button>
                   </div>
                   <iframe
                     ref={gamePreviewRef}
                     srcDoc={gameHtml}
                     title="Game Preview"
-                    className="w-full h-[500px] border-0 bg-white"
+                    className={`w-full border-0 bg-white ${isFullscreen ? "flex-1" : "h-[500px]"}`}
                     sandbox="allow-scripts allow-same-origin"
                   />
+                  {isFullscreen && (
+                    <div className="bg-gray-800 px-4 py-2 text-center text-gray-400 text-sm">
+                      Press ESC or click the minimize button to exit fullscreen
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -24,7 +24,7 @@ const Navbar = () => {
       
 
   return (
-    <header className="bg-white shadow-lg border-b border-gray-100 sticky top-0 z-50">
+    <header className="bg-white shadow-lg border-b border-gray-100 sticky top-0 z-50" role="banner" aria-label="Main navigation">
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -43,7 +43,7 @@ const Navbar = () => {
           </button>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-8">
+          <nav className="hidden md:flex items-center space-x-8" aria-label="Primary navigation">
             <a 
               href="/"
               className="flex items-center space-x-2 text-gray-700 hover:text-indigo-600 transition-colors font-medium"
