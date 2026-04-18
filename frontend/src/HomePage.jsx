@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, ChevronRight, Sparkles, Code, Gamepad2, Zap, Star, Clock } from 'lucide-react';
+import useDebouncedValue from './useDebouncedValue';
 
 export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(searchQuery, 250);
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [activeCategory, setActiveCategory] = useState('all'); 
+  const [activeCategory, setActiveCategory] = useState('all');
   
   // Sample featured games data with enhanced information
   const featuredGames = [
@@ -108,12 +110,17 @@ export default function HomePage() {
     fetchGames();
   }, []);
 
-  const filteredGames = featuredGames.filter(game => {
-    const matchesSearch = game.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         game.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = activeCategory === 'all' || game.category === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredGames = useMemo(() => {
+    const q = debouncedQuery.toLowerCase();
+    return featuredGames.filter(game => {
+      const matchesSearch =
+        !q ||
+        game.title.toLowerCase().includes(q) ||
+        game.description.toLowerCase().includes(q);
+      const matchesCategory = activeCategory === 'all' || game.category === activeCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [debouncedQuery, activeCategory]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
@@ -132,8 +139,9 @@ export default function HomePage() {
           <div className="flex flex-col md:flex-row gap-4 justify-center items-center mb-12">
             <div className="relative flex-1 max-w-lg">
               <input
-                type="text"
+                type="search"
                 placeholder="Search amazing games..."
+                aria-label="Search games by title or description"
                 className="w-full p-4 pl-12 rounded-2xl border-0 text-gray-900 placeholder-gray-500 shadow-xl focus:ring-4 focus:ring-purple-300 focus:outline-none transition-all duration-200"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -205,15 +213,29 @@ export default function HomePage() {
             {filteredGames.map((game) => (
               <div
                 onClick={() => window.location.href = "/game/" + game.id}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    window.location.href = "/game/" + game.id;
+                  }
+                }}
                 key={game.id}
-                className="group bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 cursor-pointer border border-gray-100"
+                role="link"
+                tabIndex={0}
+                aria-label={`Play ${game.title}`}
+                className="group bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 cursor-pointer border border-gray-100 focus:outline-none focus:ring-4 focus:ring-purple-300"
               >
                 <div className="relative overflow-hidden">
                   <img
                     src={game.thumbnail}
-                    alt="Game Thumbnail"
+                    alt={`${game.title} — ${game.category} game thumbnail`}
+                    loading="lazy"
+                    decoding="async"
+                    width="400"
+                    height="192"
                     className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-300"
                     onError={(e) => {
+                      e.target.onerror = null;
                       e.target.src = 'https://via.placeholder.com/400x300/6366f1/ffffff?text=' + encodeURIComponent(game.title);
                     }}
                   />

@@ -263,6 +263,7 @@ def generate_game():
             "detected_genre": detected_genre,
             "engine": engine,
         })
+        _invalidate_list_games_cache()
         save_generation_log(game_id, {
             "game_id": game_id,
             "engine": engine,
@@ -567,11 +568,28 @@ def get_game(game_id):
         return jsonify({"error": "Failed to retrieve game"}), 500
 
 
+_LIST_GAMES_CACHE: dict = {"expires_at": 0.0, "games": None}
+_LIST_GAMES_TTL_S = 30.0
+
+
+def _invalidate_list_games_cache() -> None:
+    _LIST_GAMES_CACHE["expires_at"] = 0.0
+    _LIST_GAMES_CACHE["games"] = None
+
+
 @app.route("/list_games", methods=["GET"])
 def list_games():
-    """List all saved games sorted newest first."""
+    """List all saved games sorted newest first. Cached for 30s to avoid repeated disk scans."""
     try:
-        return jsonify({"games": list_all_games()})
+        now = time.time()
+        cached = _LIST_GAMES_CACHE["games"]
+        if cached is not None and now < _LIST_GAMES_CACHE["expires_at"]:
+            return jsonify({"games": cached})
+
+        games = list_all_games()
+        _LIST_GAMES_CACHE["games"] = games
+        _LIST_GAMES_CACHE["expires_at"] = now + _LIST_GAMES_TTL_S
+        return jsonify({"games": games})
     except Exception as e:
         app.logger.error(f"Error in list_games: {str(e)}")
         return jsonify({"error": "Failed to list games"}), 500

@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Search, Gamepad2, Loader, Clock, Trash2 } from "lucide-react";
+import useDebouncedValue from "./useDebouncedValue";
 
 export default function Gallery() {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 250);
 
   useEffect(() => {
     const fetchGames = async () => {
@@ -23,11 +25,15 @@ export default function Gallery() {
     fetchGames();
   }, []);
 
-  const filtered = games.filter(
-    (g) =>
-      g.title?.toLowerCase().includes(search.toLowerCase()) ||
-      g.genre?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = debouncedSearch.toLowerCase();
+    if (!q) return games;
+    return games.filter(
+      (g) =>
+        g.title?.toLowerCase().includes(q) ||
+        g.genre?.toLowerCase().includes(q)
+    );
+  }, [games, debouncedSearch]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
