@@ -70,4 +70,10 @@ backend/temp.py
 # Local-only notes (do not commit)
 presentation_script.md
 REFACTOR_PR.md
+LAB9_PR.md
 backend/logs/
+
+# Coverage artifacts
+backend/.coverage
+backend/htmlcov/
+backend/coverage_report.txt

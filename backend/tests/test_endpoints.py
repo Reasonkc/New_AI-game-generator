@@ -135,3 +135,58 @@ class TestListGames:
         data = response.get_json()
         assert "games" in data
         assert isinstance(data["games"], list)
+
+
+class TestReportBrokenGame:
+    """Tests for POST /report_broken_game."""
+
+    def test_missing_fields(self, client):
+        response = client.post(
+            "/report_broken_game",
+            data=json.dumps({"game_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert "error" in response.get_json()
+
+    def test_invalid_game_id(self, client):
+        response = client.post(
+            "/report_broken_game",
+            data=json.dumps({"game_id": "../etc", "user_description": "broken"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_empty_description(self, client):
+        response = client.post(
+            "/report_broken_game",
+            data=json.dumps({
+                "game_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "user_description": "   ",
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_nonexistent_game(self, client):
+        response = client.post(
+            "/report_broken_game",
+            data=json.dumps({
+                "game_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "user_description": "ball does not bounce",
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 404
+
+
+class TestPlayGame:
+    """Tests for GET /play_game/<id>."""
+
+    def test_invalid_id(self, client):
+        response = client.get("/play_game/not-a-uuid")
+        assert response.status_code == 400
+
+    def test_nonexistent_game(self, client):
+        response = client.get("/play_game/a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+        assert response.status_code == 404

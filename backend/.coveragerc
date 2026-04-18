@@ -1,0 +1,18 @@
+[run]
+source = .
+omit =
+    tests/*
+    venv/*
+    gameCreator.py
+    gamemaker.py
+    middleware.py
+    screenshot.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    \.\.\.
+show_missing = True
+skip_covered = False
